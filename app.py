@@ -4,82 +4,95 @@ import requests
 import io
 import zipfile
 
-# --- TERMINAL OPTIK (Besser strukturiert) ---
-st.set_page_config(page_title="MakroBase_V28", layout="wide")
+# --- DESIGN: SUBMARINE BLUE & CLEAN UI ---
+st.set_page_config(page_title="MakroBase_Submarine", layout="wide")
 st.markdown("""<style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap');
-    * { background-color: #000 !important; color: #00ff41 !important; font-family: 'JetBrains Mono', monospace !important; }
-    .stMetric { border: 1px solid #00ff41; padding: 15px; border-radius: 10px; }
-    .status-alert { border: 2px solid #ff0000; padding: 20px; text-align: center; font-size: 20px; margin: 10px 0; }
-    .status-ok { border: 2px solid #00ff41; padding: 20px; text-align: center; font-size: 20px; margin: 10px 0; }
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+    
+    /* Submarine Blau Hintergrund */
+    .stApp { background-color: #001f3f; color: #00ff41; font-family: 'JetBrains Mono', monospace; }
+    
+    /* Boxen und Metriken */
+    [data-testid="stMetricValue"] { color: #00ff41 !important; font-size: 32px; }
+    [data-testid="stMetricLabel"] { color: #ffffff !important; }
+    .stTable { border: 1px solid #0074D9 !important; background-color: #001f3f; }
+    
+    /* Status Boxen */
+    .status-card { 
+        padding: 20px; 
+        border-radius: 10px; 
+        border: 2px solid #0074D9; 
+        margin-bottom: 20px;
+        background-color: rgba(0, 116, 217, 0.1);
+    }
 </style>""", unsafe_allow_html=True)
 
 @st.cache_data(ttl=3600)
-def fetch_data(url):
+def load_all_data(url):
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=15)
         with zipfile.ZipFile(io.BytesIO(r.content)) as z:
             df = pd.read_csv(z.open(z.namelist()[0]), low_memory=False)
         df.columns = df.columns.str.strip()
         return df
     except: return pd.DataFrame()
 
-# Lade Daten
-nasdaq_raw = fetch_data("https://www.cftc.gov/files/dea/history/fut_fin_txt_2026.zip")
-gold_raw = fetch_data("https://www.cftc.gov/files/dea/history/fut_disagg_txt_2026.zip")
+# Daten-Download
+nasdaq_df = load_all_data("https://www.cftc.gov/files/dea/history/fut_fin_txt_2026.zip")
+gold_df = load_all_data("https://www.cftc.gov/files/dea/history/fut_disagg_txt_2026.zip")
 
-# Filter
-nasdaq = nasdaq_raw[nasdaq_raw['Market_and_Exchange_Names'].str.contains("MICRO E-MINI NASDAQ-100", na=False)].copy()
-gold = gold_raw[gold_raw['Market_and_Exchange_Names'].str.contains("GOLD - COMMODITY EXCHANGE", na=False)].copy()
+# Marktspezifische Filterung
+n_data = nasdaq_df[nasdaq_df['Market_and_Exchange_Names'].str.contains("MICRO E-MINI NASDAQ-100", na=False)].copy()
+g_data = gold_df[gold_raw['Market_and_Exchange_Names'].str.contains("GOLD - COMMODITY EXCHANGE", na=False)].copy() if 'gold_raw' not in locals() else gold_df[gold_df['Market_and_Exchange_Names'].str.contains("GOLD - COMMODITY EXCHANGE", na=False)].copy()
 
-if nasdaq.empty or gold.empty:
-    st.error("!!! VERBINDUNGSFEHLER ZUR ZENTRALE !!!")
+if n_data.empty or g_data.empty:
+    st.error("SYSTEM_MELDUNG: Datenübertragung unterbrochen.")
 else:
-    # Berechnungen
-    n_net = int(nasdaq.iloc[0]['Lev_Money_Positions_Long_All']) - int(nasdaq.iloc[0]['Lev_Money_Positions_Short_All'])
-    g_net = int(gold.iloc[0]['M_Money_Positions_Long_All']) - int(gold.iloc[0]['M_Money_Positions_Short_All'])
+    # Sauberes Datum-Format (Tag.Monat.Jahr)
+    raw_date = str(n_data.iloc[0]['As_of_Date_In_Form_YYMMDD'])
+    clean_date = f"{raw_date[4:6]}.{raw_date[2:4]}.20{raw_date[0:2]}"
 
-    # --- ÜBERSCHRIFT ---
-    st.title("🖥️ MAKRO_BASE // GLOBAL_MONITOR")
-    st.write(f"SYSTEM_CHECK: ONLINE // DATEN_STAND: {nasdaq.iloc[0]['As_of_Date_In_Form_YYMMDD']}")
+    # Werte
+    n_net = int(n_data.iloc[0]['Lev_Money_Positions_Long_All']) - int(n_data.iloc[0]['Lev_Money_Positions_Short_All'])
+    g_net = int(g_data.iloc[0]['M_Money_Positions_Long_All']) - int(g_data.iloc[0]['M_Money_Positions_Short_All'])
+
+    st.title("🚢 MAKRO_BASE // TIEFEN-MONITOR")
+    st.write(f"**PROTOKOLL-DATUM:** {clean_date} | **STATUS:** GETAUCHT")
     st.write("---")
 
-    # --- ABSCHNITT 1: DIE MARKT-AMPEL (Für Kinder verständlich) ---
-    st.subheader("STRATEGIE_CHECK")
+    # --- SERIÖSE ANALYSE-TEXTE ---
+    st.subheader("STRATEGISCHE LAGEBEURTEILUNG")
     
     if n_net < -150000 and g_net > 50000:
-        st.markdown("<div class='status-alert'>🔴 GEFAHR: GROSSE FIRMEN HABEN ANGST!<br>Aktien werden verkauft, Gold wird als Schutz gekauft.</div>", unsafe_allow_html=True)
+        st.markdown(f"""<div class='status-card' style='border-color: #ff4136;'>
+            <h3 style='color: #ff4136;'>Achtung: Vorsicht geboten</h3>
+            <p style='color: #ffffff;'>Die großen Händler ziehen ihr Geld aus modernen Firmen ab und tauschen es gegen Gold. 
+            Das bedeutet: Die Profis bereiten sich auf schwierigere Zeiten vor und suchen einen sicheren Hafen.</p>
+        </div>""", unsafe_allow_html=True)
     elif n_net > 0:
-        st.markdown("<div class='status-ok'>🟢 ALLES GUT: POSITIVE STIMMUNG<br>Die Mehrheit glaubt an steigende Kurse.</div>", unsafe_allow_html=True)
+        st.markdown(f"""<div class='status-card' style='border-color: #2ecc40;'>
+            <h3 style='color: #2ecc40;'>Lagebericht: Zuversicht</h3>
+            <p style='color: #ffffff;'>Aktuell herrscht großes Vertrauen in die Wirtschaft. Die Händler investieren mutig 
+            in moderne Firmen. Es gibt derzeit keine Anzeichen für eine Fluchtbewegung.</p>
+        </div>""", unsafe_allow_html=True)
     else:
-        st.markdown("<div style='border: 2px solid #ffff00; padding: 20px; text-align: center; color: #ffff00 !important;'>🟡 WARNUNG: KEINE KLARE RICHTUNG<br>Der Markt wartet ab.</div>", unsafe_allow_html=True)
+        st.markdown(f"""<div class='status-card'>
+            <h3 style='color: #0074D9;'>Lagebericht: Beobachtung</h3>
+            <p style='color: #ffffff;'>Der Markt hält im Moment inne. Es gibt weder übermäßigen Mut noch große Angst. 
+            Es ist eine Zeit des Abwartens, bis neue Signale erscheinen.</p>
+        </div>""", unsafe_allow_html=True)
+
+    # --- METRIKEN ---
+    c1, c2 = st.columns(2)
+    with c1:
+        st.metric("NASDAQ-KRAFT (AKTIEN)", f"{n_net:,}", help="Ein Minuswert zeigt an, dass Profis eher vorsichtig sind.")
+    with c2:
+        st.metric("GOLD-KRAFT (SICHERHEIT)", f"{g_net:,}", help="Ein Pluswert zeigt an, dass Sicherheit gesucht wird.")
 
     st.write("---")
-
-    # --- ABSCHNITT 2: DIE ZAHLEN (Einfach präsentiert) ---
-    col1, col2 = st.columns(2)
+    st.subheader("HISTORISCHE AUFZEICHNUNGEN")
     
-    with col1:
-        st.write("### 📈 AKTIEN-MARKT (Nasdaq)")
-        st.metric("POWER-LEVEL", f"{n_net:,}", "ANGST" if n_net < 0 else "LAUNE")
-        st.write("Erklärung: Minus bedeutet, die Profis wetten gegen Aktien.")
-
-    with col2:
-        st.write("### 💰 GOLD-MARKT")
-        st.metric("POWER-LEVEL", f"{g_net:,}", "SICHERHEIT" if g_net > 0 else "KEIN INTERESSE")
-        st.write("Erklärung: Plus bedeutet, die Profis suchen Schutz im Gold.")
-
-    st.write("---")
-
-    # --- ABSCHNITT 3: TABELLEN (Nur das Nötigste) ---
-    st.subheader("HISTORISCHER_DATEN_STROM")
-    auswahl = st.selectbox("WELCHEN MARKT ZEIGEN?", ["NASDAQ", "GOLD"])
-    
-    if auswahl == "NASDAQ":
-        h = nasdaq[['As_of_Date_In_Form_YYMMDD', 'Lev_Money_Positions_Long_All', 'Lev_Money_Positions_Short_All']].head(10)
-        h.columns = ['DATUM', 'KÄUFER', 'VERKÄUFER']
-        st.table(h)
-    else:
-        h = gold[['As_of_Date_In_Form_YYMMDD', 'M_Money_Positions_Long_All', 'M_Money_Positions_Short_All']].head(10)
-        h.columns = ['DATUM', 'KÄUFER', 'VERKÄUFER']
-        st.table(h)
+    # Historie mit sauberem Datum
+    history_tab = n_data[['As_of_Date_In_Form_YYMMDD', 'Lev_Money_Positions_Long_All', 'Lev_Money_Positions_Short_All']].head(8).copy()
+    history_tab.columns = ['DATUM', 'KÄUFE', 'VERKÄUFE']
+    st.table(history_tab)
