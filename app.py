@@ -7,50 +7,57 @@ import zipfile
 st.set_page_config(page_title="Nasdaq COT Tracker", layout="wide")
 st.title("📊 Aktueller Nasdaq 100 COT Report")
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60) # Cache auf 1 Minute reduziert für Fehlersuche
 def get_cot_data():
     url = "https://www.cftc.gov/files/dea/history/fut_fin_txt_2026.zip"
     response = requests.get(url)
     with zipfile.ZipFile(io.BytesIO(response.content)) as z:
         fname = z.namelist()[0]
         with z.open(fname) as f:
+            # Wir laden die Daten ohne Header-Check, um Namen-Fehler zu umgehen
             df = pd.read_csv(f, low_memory=False)
     
-    # Spaltennamen radikal bereinigen
-    df.columns = [c.strip() for c in df.columns]
+    # Bereinigung der Spaltennamen (entfernt unsichtbare Zeichen)
+    df.columns = df.columns.str.strip()
     
-    # Den Nasdaq-Eintrag finden
+    # Nasdaq finden (Name ist stabil, Spaltenüberschriften oft nicht)
     nasdaq = df[df['Market_and_Exchange_Names'].str.contains("NASDAQ-100", na=False)].copy()
-    
-    # Wir nutzen die Spalten-Nummern statt Namen, falls die CFTC Namen ändert
-    # Die Positionen der wichtigen Daten sind in der CSV meist fest
-    # Aber wir versuchen es erst nochmal mit den Standardnamen, falls sie jetzt sauber sind
-    cols_mapping = {
-        'As_of_Date_In_Form_YYMMDD': 'Datum',
-        'NonComm_Positions_Long_All': 'Spek_Long',
-        'NonComm_Positions_Short_All': 'Spek_Short'
-    }
-    
-    # Check welche Spalten wirklich da sind
-    available_cols = [c for c in cols_mapping.keys() if c in df.columns]
-    nasdaq = nasdaq[available_cols].rename(columns=cols_mapping)
-    
-    if 'Spek_Long' in nasdaq.columns and 'Spek_Short' in nasdaq.columns:
-        nasdaq['Netto'] = nasdaq['Spek_Long'] - nasdaq['Spek_Short']
     
     return nasdaq
 
 try:
-    data = get_cot_data()
-    if not data.empty:
-        latest = data.iloc[0]
-        st.metric("Bericht-Datum", str(latest['Datum']))
-        st.metric("Netto-Position Spekulanten", f"{int(latest['Netto']):,}")
-        st.line_chart(data.set_index('Datum')['Netto'])
-        st.write("### Rohdaten Übersicht")
-        st.dataframe(data)
+    df_nasdaq = get_cot_data()
+    
+    if not df_nasdaq.empty:
+        # Wir greifen auf die Daten zu, egal wie die Spalte genau heißt
+        # 'As_of_Date_In_Form_YYMMDD' ist meistens Spalte 2
+        # 'NonComm_Positions_Long_All' ist meistens Spalte 7 etc.
+        
+        # Um ganz sicher zu gehen, lassen wir uns die verfügbaren Spalten anzeigen
+        all_cols = df_nasdaq.columns.tolist()
+        
+        # Suche die Spalten dynamisch
+        date_col = [c for c in all_cols if "Date" in c][0]
+        long_col = [c for c in all_cols if "NonComm_Positions_Long_All" in c][0]
+        short_col = [c for c in all_cols if "NonComm_Positions_Short_All" in c][0]
+        
+        latest = df_nasdaq.iloc[0]
+        netto = int(latest[long_col]) - int(latest[short_col])
+        
+        col1, col2 = st.columns(2)
+        col1.metric("Bericht vom (YYMMDD)", latest[date_col])
+        col2.metric("Netto-Position Spekulanten", f"{netto:,}")
+        
+        # Verlaufsdaten für den Chart
+        chart_data = df_nasdaq.copy()
+        chart_data['Netto'] = chart_data[long_col].astype(int) - chart_data[short_col].astype(int)
+        st.line_chart(chart_data.set_index(date_col)['Netto'])
+        
+        st.write("### Rohdaten-Check")
+        st.dataframe(df_nasdaq[[date_col, long_col, short_col]])
     else:
-        st.warning("Nasdaq-Daten konnten in der Datei nicht gefunden werden.")
+        st.error("Keine Nasdaq-Daten in der Datei gefunden.")
+        
 except Exception as e:
-    st.error(f"Fehler: {e}")
-    st.info("Tipp: Die CFTC hat das Dateiformat leicht geändert. Der Code oben wurde angepasst, um dies abzufangen.")
+    st.error(f"Technischer Fehler: {e}")
+    st.write("Verfügbare Spalten in der Datei:", all_cols if 'all_cols' in locals() else "Konnte Datei nicht lesen")
