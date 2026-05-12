@@ -7,7 +7,6 @@ import zipfile
 # --- DESIGN: HIGH CONTRAST MINIMALISM ---
 st.set_page_config(page_title="Makro Terminal", layout="wide")
 st.markdown("""<style>
-    /* Klare, hochlesbare Schriftart */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
 
     .stApp { background-color: #000000; color: #ffffff; font-family: 'Inter', sans-serif; }
@@ -20,23 +19,13 @@ st.markdown("""<style>
         color: #ffffff;
     }
 
-    .asset-label {
-        font-size: 14px;
-        color: #666666;
-        text-transform: uppercase;
-        margin-bottom: 5px;
-    }
+    .asset-label { font-size: 14px; color: #666666; text-transform: uppercase; margin-bottom: 5px; }
+    .instrument-name { font-size: 24px; font-weight: 700; margin-bottom: 20px; }
 
-    .instrument-name {
-        font-size: 24px;
-        font-weight: 700;
-        margin-bottom: 20px;
-    }
-
-    /* Nasdaq-Farbe */
+    /* Farben für die Assets */
     .color-nasdaq { color: #00d4ff; }
-    /* Gold-Farbe */
     .color-gold { color: #ffcc00; }
+    .color-oil { color: #bf55ff; } /* Violett für Öl */
 
     .data-box { 
         padding: 25px; 
@@ -65,45 +54,53 @@ def fetch_data(url):
         return df
     except: return pd.DataFrame()
 
-# Daten
+# Datenquellen laden
+# Nasdaq ist im Financial Report, Gold und Öl im Disaggregated Report
 n_raw = fetch_data("https://www.cftc.gov/files/dea/history/fut_fin_txt_2026.zip")
-g_raw = fetch_data("https://www.cftc.gov/files/dea/history/fut_disagg_txt_2026.zip")
+dis_raw = fetch_data("https://www.cftc.gov/files/dea/history/fut_disagg_txt_2026.zip")
 
-if not n_raw.empty and not g_raw.empty:
+if not n_raw.empty and not dis_raw.empty:
+    # Filter
     ndq = n_raw[n_raw['Market_and_Exchange_Names'].str.contains("MICRO E-MINI NASDAQ-100", na=False)].iloc[0]
-    gld = g_raw[g_raw['Market_and_Exchange_Names'].str.contains("GOLD - COMMODITY EXCHANGE", na=False)].iloc[0]
+    gld = dis_raw[dis_raw['Market_and_Exchange_Names'].str.contains("GOLD - COMMODITY EXCHANGE", na=False)].iloc[0]
+    oil = dis_raw[dis_raw['Market_and_Exchange_Names'].str.contains("WTI LIGHT SWEET CRUDE OIL", na=False)].iloc[0]
 
+    # Nasdaq Extraktion
     n_l, n_s = int(ndq['Lev_Money_Positions_Long_All']), int(ndq['Lev_Money_Positions_Short_All'])
+    # Gold Extraktion
     g_l, g_s = int(gld['M_Money_Positions_Long_All']), int(gld['M_Money_Positions_Short_All'])
-    n_net, g_net = n_l - n_s, g_l - g_s
+    # Öl Extraktion
+    o_l, o_s = int(oil['M_Money_Positions_Long_All']), int(oil['M_Money_Positions_Short_All'])
+
+    def render_asset(title, color_class, long, short):
+        net = long - short
+        st.markdown(f"<div class='asset-label'>Asset</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='instrument-name {color_class}'>{title}</div>", unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(f"<div class='data-box'><p class='box-label'>Käufer</p><p class='val-buy'>{long:,}</p></div>", unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"<div class='data-box'><p class='box-label'>Verkäufer</p><p class='val-sell'>{short:,}</p></div>", unsafe_allow_html=True)
+        with c3:
+            style = "val-net-pos" if net > 0 else "val-net-neg"
+            st.markdown(f"<div class='data-box'><p class='box-label'>Netto</p><p class='{style}'>{net:,}</p></div>", unsafe_allow_html=True)
+        st.markdown("<hr>", unsafe_allow_html=True)
 
     # --- UI ---
     st.markdown("<div class='main-title'>Makro Terminal Numbers</div>", unsafe_allow_html=True)
     
-    # ASSET: NASDAQ
-    st.markdown("<div class='asset-label'>Asset</div>", unsafe_allow_html=True)
-    st.markdown("<div class='instrument-name color-nasdaq'>Nasdaq 100</div>", unsafe_allow_html=True)
-    
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown(f"<div class='data-box'><p class='box-label'>Käufer</p><p class='val-buy'>{n_l:,}</p></div>", unsafe_allow_html=True)
-    with c2:
-        st.markdown(f"<div class='data-box'><p class='box-label'>Verkäufer</p><p class='val-sell'>{n_s:,}</p></div>", unsafe_allow_html=True)
-    with c3:
-        n_style = "val-net-pos" if n_net > 0 else "val-net-neg"
-        st.markdown(f"<div class='data-box'><p class='box-label'>Netto</p><p class='{n_style}'>{n_net:,}</p></div>", unsafe_allow_html=True)
+    render_asset("Nasdaq 100", "color-nasdaq", n_l, n_s)
+    render_asset("Gold", "color-gold", g_l, g_s)
+    render_asset("Crude Oil WTI", "color-oil", o_l, o_s)
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+    # Trade Ideen Seite (Logik-Update)
+    st.sidebar.title("Navigation")
+    page = st.sidebar.radio("Modus", ["Dashboard", "Trade Ideen"])
     
-    # ASSET: GOLD
-    st.markdown("<div class='asset-label'>Asset</div>", unsafe_allow_html=True)
-    st.markdown("<div class='instrument-name color-gold'>Gold</div>", unsafe_allow_html=True)
-    
-    g1, g2, g3 = st.columns(3)
-    with g1:
-        st.markdown(f"<div class='data-box'><p class='box-label'>Käufer</p><p class='val-buy'>{g_l:,}</p></div>", unsafe_allow_html=True)
-    with g2:
-        st.markdown(f"<div class='data-box'><p class='box-label'>Verkäufer</p><p class='val-sell'>{g_s:,}</p></div>", unsafe_allow_html=True)
-    with g3:
-        g_style = "val-net-pos" if g_net > 0 else "val-net-neg"
-        st.markdown(f"<div class='data-box'><p class='box-label'>Netto</p><p class='{g_style}'>{g_net:,}</p></div>", unsafe_allow_html=True)
+    if page == "Trade Ideen":
+        st.title("Trade Ideen")
+        # Kombinierte Logik
+        if n_l - n_s < -100000 and o_l - o_s < -50000:
+            st.error("Globaler Abschwung: Nasdaq und Öl werden massiv verkauft. Vorsicht!")
+        elif n_l - n_s > 0 and o_l - o_s > 0:
+            st.success("Wachstums-Modus: Aktien und Öl steigen synchron.")
