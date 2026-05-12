@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import io
 import zipfile
+import plotly.express as px
 
 # Seite einrichten
 st.set_page_config(page_title="Nasdaq Sentiment", layout="centered")
@@ -10,7 +11,6 @@ st.set_page_config(page_title="Nasdaq Sentiment", layout="centered")
 # Styling
 st.markdown("""
     <style>
-    .reportview-container { background: #0e1117; }
     .sentiment-card {
         background-color: #1f2937;
         padding: 20px;
@@ -31,43 +31,60 @@ def get_cot_data():
             df = pd.read_csv(f, low_memory=False)
     df.columns = df.columns.str.strip()
     nasdaq = df[df['Market_and_Exchange_Names'].str.contains("NASDAQ-100", na=False)].copy()
+    
+    # Richtiges Datumsobjekt erstellen für die Sortierung
+    nasdaq['Date_Obj'] = pd.to_datetime(nasdaq['As_of_Date_In_Form_YYMMDD'], format='%y%m%d')
     nasdaq['Netto'] = nasdaq['Lev_Money_Positions_Long_All'] - nasdaq['Lev_Money_Positions_Short_All']
-    nasdaq['Datum'] = nasdaq['As_of_Date_In_Form_YYMMDD'].astype(str).apply(lambda x: f"{x[4:6]}.{x[2:4]}.")
-    return nasdaq
+    
+    # Chronologisch sortieren (alt nach neu)
+    return nasdaq.sort_values('Date_Obj', ascending=True)
 
 try:
     data = get_cot_data()
-    latest = data.iloc[0]
+    latest = data.iloc[-1] # Letzter Eintrag nach Sortierung
     val = int(latest['Netto'])
     
-    # 1. Headline & Status
     st.title("Nasdaq 100 Sentiment")
     
+    # 1. Status Karte
     status_text = "EXTREM BÄRISCH" if val < -50000 else "NEUTRAL"
     st.markdown(f"""
         <div class="sentiment-card">
-            <p style="margin:0; color:#9ca3af; font-size:14px;">AKTUELLER STATUS</p>
+            <p style="margin:0; color:#9ca3af; font-size:14px;">AKTUELLER STATUS ({latest['Date_Obj'].strftime('%d.%m.%Y')})</p>
             <h2 style="margin:0; color:white;">{status_text} ({val:,})</h2>
             <p style="margin:0; color:#ef4444; font-size:14px;">Hedgefonds wetten massiv gegen den Markt.</p>
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. Kompakter Chart (Nur die letzten 12 Wochen für Fokus)
+    # 2. Profi-Chart mit Plotly
     st.subheader("Wochen-Trend (Netto-Positionen)")
-    chart_df = data.head(12).iloc[::-1]
-    st.bar_chart(chart_df.set_index('Datum')['Netto'], height=250)
+    
+    # Wir nehmen die letzten 15 Datenpunkte
+    chart_df = data.tail(15)
+    
+    fig = px.bar(chart_df, x='Date_Obj', y='Netto',
+                 labels={'Date_Obj': 'Datum', 'Netto': 'Netto-Position'},
+                 color_discrete_sequence=['#3b82f6'])
+    
+    fig.update_layout(
+        xaxis_tickformat='%d.%m.',
+        xaxis_title=None,
+        yaxis_title=None,
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=350,
+        hovermode="x unified"
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
 
-    # 3. Historische Einordnung
+    # 3. Historischer Vergleich
     st.subheader("Historischer Vergleich")
     max_short = data['Netto'].min()
     avg_short = data['Netto'].mean()
     
     col1, col2 = st.columns(2)
-    col1.metric("All-Time Low (Short)", f"{int(max_short):,}")
+    col1.metric("Rekord Short", f"{int(max_short):,}")
     col2.metric("Durchschnitt", f"{int(avg_short):,}")
-    
-    percent_of_extreme = (val / max_short) * 100
-    st.write(f"👉 Wir sind aktuell bei **{percent_of_extreme:.1f}%** des historischen Short-Extrems.")
 
 except Exception as e:
     st.error(f"Fehler: {e}")
