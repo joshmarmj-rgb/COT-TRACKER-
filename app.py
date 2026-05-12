@@ -4,45 +4,22 @@ import requests
 import io
 import zipfile
 import plotly.graph_objects as go
-from datetime import datetime
 
-# Konfiguration
-st.set_page_config(page_title="Alpha Terminal V2", layout="wide")
+st.set_page_config(page_title="Nasdaq Alpha Speedometer", layout="centered")
 
-# --- RADIKALES MINIMAL-DESIGN (CSS) ---
+# --- CLEAN TRADING DESIGN ---
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=JetBrains+Mono&display=swap');
-    
-    html, body, [class*="css"] { 
-        font-family: 'Inter', sans-serif; 
-        background-color: #000000; 
-        color: #e2e8f0;
+    .main { background-color: #000000; color: #ffffff; }
+    .decision-box {
+        background-color: #111827;
+        padding: 25px;
+        border-radius: 12px;
+        border: 2px solid #374151;
+        margin-top: 20px;
     }
-    
-    .metric-container {
-        background: #0a0a0a;
-        border: 1px solid #1a1a1a;
-        padding: 1.5rem;
-        border-radius: 8px;
-    }
-    
-    .status-badge {
-        padding: 4px 12px;
-        border-radius: 4px;
-        font-size: 12px;
-        font-weight: bold;
-        text-transform: uppercase;
-        background: #1e293b;
-    }
-
-    .description-text {
-        color: #94a3b8;
-        font-size: 14px;
-        line-height: 1.6;
-    }
-    
-    h1, h2, h3 { font-family: 'Inter', sans-serif; letter-spacing: -0.02em; }
+    .metric-label { color: #9ca3af; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+    .metric-value { font-size: 36px; font-weight: bold; color: #ffffff; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -56,100 +33,73 @@ def get_cot_data():
             df = pd.read_csv(f, low_memory=False)
     df.columns = df.columns.str.strip()
     nasdaq = df[df['Market_and_Exchange_Names'].str.contains("NASDAQ-100", na=False)].copy()
-    nasdaq['Date_Obj'] = pd.to_datetime(nasdaq['As_of_Date_In_Form_YYMMDD'], format='%y%m%d')
     nasdaq['Netto'] = nasdaq['Lev_Money_Positions_Long_All'] - nasdaq['Lev_Money_Positions_Short_All']
-    return nasdaq.sort_values('Date_Obj')
+    return nasdaq
 
 try:
     data = get_cot_data()
-    latest = data.iloc[-1]
+    latest = data.iloc[0]
+    val = int(latest['Netto'])
     
-    # --- HEADER & STATUS ---
-    col_t1, col_t2 = st.columns([2, 1])
-    with col_t1:
-        st.title("NASDAQ 100 ALPHA TERMINAL")
-        st.markdown(f"**DATEN-FEED:** CFTC TFF Report // **STAND:** {latest['Date_Obj'].strftime('%d.%m.%Y')}")
-    
-    with col_t2:
-        sentiment = "EXTREME SHORT" if int(latest['Netto']) < -100000 else "BEARISH"
-        st.markdown(f"<div style='text-align:right; margin-top:20px;'><span class='status-badge' style='color:#fb7185; border:1px solid #fb7185;'>{sentiment}</span></div>", unsafe_allow_html=True)
+    # Historische Extremwerte für den Tacho
+    min_val = data['Netto'].min()
+    max_val = data['Netto'].max()
 
-    st.write("---")
+    st.title("Nasdaq Insider Tacho")
+    st.write(f"Marktzustand basierend auf CFTC-Daten vom {latest['As_of_Date_In_Form_YYMMDD']}")
 
-    # --- DIE ZAHLEN VERSTÄNDLICH ERKLÄRT ---
-    c1, c2, c3 = st.columns(3)
-    
-    with c1:
-        st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-        st.metric("NET EXPOSURE", f"{int(latest['Netto']):,}")
-        st.markdown("""
-            <p class='description-text'>
-            <b>Was das ist:</b> Die Differenz zwischen Kauf- (Long) und Verkaufsverträgen (Short).<br>
-            <b>Bedeutung:</b> Ein negativer Wert zeigt, dass Hedgefonds netto auf fallende Kurse wetten.
-            </p>
-            """, unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with c2:
-        long_p = int(latest['Lev_Money_Positions_Long_All'])
-        short_p = int(latest['Lev_Money_Positions_Short_All'])
-        ratio = long_p / short_p if short_p != 0 else 0
-        st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-        st.metric("L/S RATIO", f"{ratio:.2f}")
-        st.markdown(f"""
-            <p class='description-text'>
-            <b>Was das ist:</b> Das Verhältnis von Long- zu Short-Kontrakten.<br>
-            <b>Bedeutung:</b> Bei {ratio:.2f} kommen auf 1 Short-Kontrakt nur {ratio:.2f} Longs. Die Übermacht der Bären ist massiv.
-            </p>
-            """, unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with c3:
-        oi = int(latest['Open_Interest_All'])
-        st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-        st.metric("OPEN INTEREST", f"{oi:,}")
-        st.markdown("""
-            <p class='description-text'>
-            <b>Was das ist:</b> Die Gesamtzahl aller offenen Kontrakte im Markt.<br>
-            <b>Bedeutung:</b> Hohes Open Interest bei fallenden Netto-Positionen bestätigt einen starken Abwärtstrend der Profis.
-            </p>
-            """, unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # --- CLEANER CHART ---
-    st.write("### SENTIMENT HISTORIE (26 WOCHEN)")
-    chart_df = data.tail(26)
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=chart_df['Date_Obj'], y=chart_df['Netto'],
-        mode='lines+markers',
-        line=dict(width=2, color='#38bdf8'),
-        marker=dict(size=4, color='#38bdf8'),
-        fill='tozeroy',
-        fillcolor='rgba(56, 189, 248, 0.05)'
+    # --- DER TACHO (STATT DIAGRAMM) ---
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number",
+        value = val,
+        domain = {'x': [0, 1], 'y': [0, 1]},
+        title = {'text': "Hedgefonds Sentiment", 'font': {'size': 24, 'color': '#ffffff'}},
+        gauge = {
+            'axis': {'range': [min_val, max_val], 'tickwidth': 1, 'tickcolor': "white"},
+            'bar': {'color': "#3b82f6"},
+            'bgcolor': "rgba(0,0,0,0)",
+            'borderwidth': 2,
+            'bordercolor': "#374151",
+            'steps': [
+                {'range': [min_val, min_val*0.6], 'color': '#7f1d1d'}, # Extrem Short
+                {'range': [min_val*0.6, 0], 'color': '#450a0a'},     # Short
+                {'range': [0, max_val], 'color': '#064e3b'}          # Long
+            ],
+            'threshold': {
+                'line': {'color': "white", 'width': 4},
+                'thickness': 0.75,
+                'value': val
+            }
+        }
     ))
-    
-    fig.add_hline(y=0, line_color="#334155", line_width=1)
-    
-    fig.update_layout(
-        margin=dict(l=0, r=0, t=10, b=0), height=350,
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(showgrid=False, color='#475569'),
-        yaxis=dict(gridcolor='#1a1a1a', color='#475569', side="right"),
-        hovermode="x unified"
-    )
+
+    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': "white", 'family': "Arial"}, height=350, margin=dict(t=0, b=0))
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- TRADING LOGIK ---
-    with st.expander("🛡️ HANDLUNGS-PROTOKOLL LESEN"):
-        st.info("""
-        **1. Kontra-Indikator (Short Squeeze):**
-        Hedgefonds liegen oft richtig, aber an Extrempunkten (sehr tiefe Netto-Werte) liegen sie oft falsch. Wenn alle 'Short' sind, gibt es niemanden mehr, der verkaufen kann. Ein kleiner Kursanstieg zwingt sie dann zum Rückkauf -> der Kurs explodiert nach oben.
+    # --- DIE ENTSCHEIDUNGS-MATRIX ---
+    st.markdown("<div class='decision-box'>", unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("<p class='metric-label'>Positionierung</p>", unsafe_allow_html=True)
+        st.markdown(f"<p class='metric-value'>{val:,}</p>", unsafe_allow_html=True)
+        st.write("Hedgefonds wetten aktuell massiv gegen den Markt.")
         
-        **2. Smart Money Flow:**
-        Beobachte die Richtung der Linie. Sinkt sie, während der Nasdaq-Preis steigt? Das nennt man Divergenz. Die Profis sichern sich gegen einen Fall ab, während der Rest der Welt noch kauft.
-        """)
+    with col2:
+        st.markdown("<p class='metric-label'>Markt-Phase</p>", unsafe_allow_html=True)
+        phase = "⚠️ SHORT SQUEEZE GEFAHR" if val < -150000 else "📉 ABWÄRTSTREND"
+        st.markdown(f"<p class='metric-value' style='color:#ef4444;'>{phase}</p>", unsafe_allow_html=True)
+        st.write("Das Smart Money zieht sich zurück oder sichert ab.")
+
+    st.write("---")
+    st.markdown("### 🛠️ Handlungs-Empfehlung")
+    if val < -100000:
+        st.warning("**KONTRA-CHANCE:** Die Stimmung ist so schlecht, dass ein Boden nahe sein könnte. Achte auf Umkehrsignale im Chart (z.B. RSI-Divergenz).")
+    else:
+        st.info("**TREND-FOLGE:** Die Profis sind pessimistisch. Vorsicht bei Long-Einstiegen, solange der Tacho tief im roten Bereich steht.")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
 except Exception as e:
     st.error(f"Fehler: {e}")
