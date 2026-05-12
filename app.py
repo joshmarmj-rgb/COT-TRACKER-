@@ -4,20 +4,23 @@ import requests
 import io
 import zipfile
 import plotly.graph_objects as go
+from datetime import datetime
 
-st.set_page_config(page_title="Nasdaq COT Expert Terminal", layout="wide")
+# Setup
+st.set_page_config(page_title="Nasdaq Alpha Terminal", layout="wide", initial_sidebar_state="collapsed")
 
-# --- DARK TERMINAL DESIGN ---
+# --- CORE DESIGN (CSS) ---
 st.markdown("""
     <style>
-    .main { background-color: #000000; }
-    [data-testid="stMetricValue"] { font-size: 32px !important; font-weight: 700; }
-    .status-card {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        padding: 25px;
-        border-radius: 15px;
-        border: 1px solid #334155;
-        margin-bottom: 20px;
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+    html, body, [class*="css"] { font-family: 'JetBrains Mono', monospace; background-color: #050505; }
+    .stMetric { background-color: #0f172a; border: 1px solid #1e293b; padding: 20px; border-radius: 4px; }
+    div[data-testid="stMetricValue"] { color: #38bdf8; font-family: 'JetBrains Mono'; }
+    .analysis-card {
+        border-left: 4px solid #38bdf8;
+        background-color: #0f172a;
+        padding: 20px;
+        margin: 20px 0;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -39,57 +42,70 @@ def get_cot_data():
 try:
     data = get_cot_data()
     latest = data.iloc[-1]
+    netto = int(latest['Netto'])
     
-    # Header
-    st.title("🏛️ Nasdaq Insider Terminal")
-    
-    # Metriken in einer Reihe
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Netto-Position", f"{int(latest['Netto']):,}")
-    c2.metric("Long Quote", f"{(latest['Lev_Money_Positions_Long_All']/(latest['Lev_Money_Positions_Long_All']+latest['Lev_Money_Positions_Short_All'])*100):.1f}%")
-    c3.metric("Bericht vom", latest['Date_Obj'].strftime('%d.%m.%Y'))
+    # --- HEADER ---
+    st.markdown(f"<h1 style='text-align: center; color: white; letter-spacing: 2px;'>NASDAQ 100 COT INSIDER</h1>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: #64748b;'>TERMINAL ACCESS VERIFIED // SYSTEM DATE: {datetime.now().strftime('%d.%m.%Y')}</p>", unsafe_allow_html=True)
+    st.write("---")
 
-    # --- DAS SCHÖNE DIAGRAMM (AREA CHART) ---
-    st.subheader("Sentiment Trend")
+    # --- TOP KPIs ---
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("NET POSITION", f"{netto:,}")
     
-    chart_df = data.tail(26) # Letzte 6 Monate
+    # Sentiment Intensity Score
+    max_ever = data['Netto'].max()
+    min_ever = data['Netto'].min()
+    intensity = ((netto - min_ever) / (max_ever - min_ever)) * 100
+    c2.metric("SENTIMENT INTENSITY", f"{intensity:.1f}%")
+    
+    long_p = int(latest['Lev_Money_Positions_Long_All'])
+    short_p = int(latest['Lev_Money_Positions_Short_All'])
+    c3.metric("LONG/SHORT RATIO", f"{long_p/short_p:.2f}")
+    c4.metric("REPORT DATE", latest['Date_Obj'].strftime('%d.%m.%Y'))
+
+    # --- THE "MASTER" CHART ---
+    chart_df = data.tail(30)
     
     fig = go.Figure()
 
-    # Fläche mit Verlauf
+    # Gradient-like Area Chart mit flüssigen Farben
     fig.add_trace(go.Scatter(
-        x=chart_df['Date_Obj'], 
-        y=chart_df['Netto'],
+        x=chart_df['Date_Obj'], y=chart_df['Netto'],
+        mode='lines',
+        line=dict(width=4, color='#38bdf8'),
         fill='tozeroy',
-        mode='lines+markers',
-        line=dict(width=3, color='#3b82f6'),
-        fillcolor='rgba(59, 130, 246, 0.2)',
-        marker=dict(size=6, color='#60a5fa')
+        fillcolor='rgba(56, 189, 248, 0.1)',
+        name="Net Exposure"
     ))
 
+    # Nulllinie hervorheben
+    fig.add_hline(y=0, line_dash="dash", line_color="#475569")
+
     fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='#050505', paper_bgcolor='#050505',
         margin=dict(l=0, r=0, t=20, b=0),
-        height=400,
-        xaxis=dict(showgrid=False, color='#94a3b8'),
-        yaxis=dict(showgrid=True, gridcolor='#1e293b', color='#94a3b8'),
+        height=500,
+        xaxis=dict(showgrid=False, color='#64748b', tickfont=dict(size=10)),
+        yaxis=dict(gridcolor='#1e293b', color='#64748b', tickfont=dict(size=10), side="right"),
         hovermode="x unified"
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # Info Bereich
-    st.markdown(f"""
-    <div class="status-card">
-        <h3 style="margin-top:0; color:#f8fafc;">💡 Marktanalyse</h3>
-        <p style="color:#cbd5e1; font-size:16px;">
-        Die Hedgefonds sind aktuell mit <b>{int(latest['Netto']):,} Kontrakten</b> positioniert. 
-        Ein fallender Trend im Chart bedeutet, dass das "Smart Money" zunehmend vorsichtiger wird oder aktiv auf fallende Kurse setzt. 
-        Besonders die Geschwindigkeit des Abfalls in den letzten Wochen ist ein wichtiges Warnsignal.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    # --- INTELLIGENT ANALYSIS ENGINE ---
+    st.markdown("<div class='analysis-card'>", unsafe_allow_html=True)
+    st.markdown("### ⚡ ANALYSE-PROTOKOLL")
+    
+    if netto < -100000:
+        st.write(f"**STATUS: EXTREMES SHORT-EXTREM.** Die Hedgefonds sind in einer historisch bärischen Zone. Das Risiko für einen massiven Short-Squeeze (plötzlicher Kursanstieg) ist auf Stufe **KRITISCH**.")
+    elif netto < 0:
+        st.write(f"**STATUS: BEARISH BIAS.** Die professionellen Spekulanten bevorzugen die Short-Seite. Der Markt zeigt strukturelle Schwäche.")
+    else:
+        st.write(f"**STATUS: BULLISH BIAS.** Das 'Smart Money' ist netto-long positioniert und stützt den Aufwärtstrend.")
+        
+    st.write(f"**DETAIL:** Die Long-Positionen liegen bei {long_p:,} Kontrakten, während {short_p:,} Kontrakte auf fallende Kurse wetten.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 except Exception as e:
-    st.error(f"Fehler: {e}")
+    st.error(f"TERMINAL ERROR: {e}")
