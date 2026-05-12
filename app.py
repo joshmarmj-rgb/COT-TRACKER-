@@ -5,232 +5,265 @@ import io
 import zipfile
 import plotly.graph_objects as go
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import time
 
-# --- SYSTEM CONFIGURATION ---
+# --- SYSTEM INITIALIZATION ---
+# Wir setzen das Layout auf Wide und verbergen das Standard-Menü für den Terminal-Look.
 st.set_page_config(
-    page_title="NASDAQ QUANTUM | Institutional Grade",
-    page_icon="📟",
+    page_title="NASDAQ QUANTUM | Institutional Terminal",
+    page_icon="🎯",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# --- TERMINAL STYLING (EXTENDED CSS ENGINE) ---
+# --- PROFESSIONAL TERMINAL CSS ENGINE ---
+# Wir nutzen über 80 Zeilen CSS, um das Standard-Streamlit-Design komplett zu überschreiben.
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;500&family=Inter:wght@200;400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100;400;700&display=swap');
     
     :root {
-        --bg-color: #030303;
-        --surface-color: #0a0b0d;
-        --border-color: #1a1c1f;
-        --accent-color: #00e5ff;
-        --bull-color: #00ffaa;
-        --bear-color: #ff3366;
-        --text-main: #e2e8f0;
-        --text-dim: #64748b;
+        --bg-main: #010101;
+        --panel-bg: #080808;
+        --border-dim: #161616;
+        --cyan-glow: #00f2ff;
+        --bull-green: #00ff88;
+        --bear-red: #ff2255;
+        --text-silver: #c0c0c8;
+        --text-dim: #44444a;
     }
 
-    .main { background-color: var(--bg-color); color: var(--text-main); font-family: 'Inter', sans-serif; }
-    .stApp { background-color: var(--bg-color); }
-
-    /* Layout Containers */
-    .terminal-card {
-        background: var(--surface-color);
-        border: 1px solid var(--border-color);
-        padding: 24px;
-        position: relative;
-        transition: border 0.4s ease;
-    }
-    .terminal-card:hover { border-color: var(--accent-color); }
+    /* Global Overrides */
+    .stApp { background-color: var(--bg-main); color: var(--text-silver); }
+    .main { background-color: var(--bg-main); font-family: 'JetBrains Mono', monospace; }
     
-    .status-bar {
-        font-family: 'Fira Code', monospace;
-        font-size: 10px;
-        color: var(--text-dim);
-        border-bottom: 1px solid var(--border-color);
-        padding-bottom: 10px;
+    /* Terminal Panels */
+    .quantum-card {
+        background: var(--panel-bg);
+        border: 1px solid var(--border-dim);
+        padding: 25px;
+        position: relative;
+        overflow: hidden;
         margin-bottom: 20px;
-        display: flex;
-        justify-content: space-between;
+    }
+    
+    .quantum-card::after {
+        content: ""; position: absolute; top: 0; left: 0; width: 2px; height: 100%;
+        background: var(--cyan-glow); opacity: 0.5;
     }
 
-    /* Typography */
-    .label { font-family: 'Fira Code', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-dim); }
-    .value-large { font-family: 'Fira Code', monospace; font-size: 36px; font-weight: 500; margin: 10px 0; color: #ffffff; }
-    .delta-positive { color: var(--bull-color); font-family: 'Fira Code', monospace; font-size: 12px; }
-    .delta-negative { color: var(--bear-color); font-family: 'Fira Code', monospace; font-size: 12px; }
+    /* Metrics & Typography */
+    .t-label { color: var(--text-dim); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; }
+    .t-value { color: #ffffff; font-size: 34px; font-weight: 100; margin: 12px 0; }
+    .t-delta { font-size: 11px; font-family: 'JetBrains Mono'; }
+    .t-bull { color: var(--bull-green); }
+    .t-bear { color: var(--bear-red); }
 
-    /* Indicators */
-    .pixel-border { border-left: 3px solid var(--accent-color); padding-left: 15px; }
+    /* Custom UI Elements */
+    .status-pill {
+        display: inline-block; padding: 2px 10px; border: 1px solid var(--text-dim);
+        font-size: 9px; color: var(--text-dim); border-radius: 2px;
+    }
     .pulse {
-        height: 6px; width: 6px; background: var(--bull-color); border-radius: 50%;
-        display: inline-block; margin-right: 8px; box-shadow: 0 0 8px var(--bull-color);
+        height: 6px; width: 6px; background-color: var(--bull-green); border-radius: 50%;
+        display: inline-block; margin-right: 8px; box-shadow: 0 0 10px var(--bull-green);
     }
 
-    /* Scrollbar & Streamlit Overrides */
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-thumb { background: var(--border-color); }
-    .stDataFrame { border: 1px solid var(--border-color) !important; }
-    button[kind="primary"] { background-color: transparent; border: 1px solid var(--accent-color); color: var(--accent-color); }
+    /* DataFrame Styling */
+    .stDataFrame { border: 1px solid var(--border-dim) !important; background: var(--panel-bg); }
+    
+    /* Hide Streamlit elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- ANALYTICS CORE ---
-class QuantumEngine:
+# --- CORE DATA & ANALYTICS ENGINE ---
+class QuantumDataEngine:
+    """Zentrale Einheit für Datenbeschaffung, Filterung und mathematische Analyse."""
+    
     def __init__(self):
-        self.target_patterns = ["NASDAQ-100", "NDX", "NASDAQ 100 STOCK"]
         self.year = 2026
+        # Wir decken alle Namensvarianten ab, um Filterfehler zu vermeiden.
+        self.valid_names = ["NASDAQ-100", "NDX", "NASDAQ 100", "NASDAQ-100 STOCK INDEX"]
 
     @st.cache_data(ttl=3600)
-    def get_institutional_flow(_self):
+    def fetch_stream(_self):
         url = f"https://www.cftc.gov/files/dea/history/fut_fin_txt_{_self.year}.zip"
         try:
-            r = requests.get(url, timeout=15)
-            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+            response = requests.get(url, timeout=10)
+            with zipfile.ZipFile(io.BytesIO(response.content)) as z:
                 with z.open(z.namelist()[0]) as f:
                     df = pd.read_csv(f, low_memory=False)
             
             df.columns = df.columns.str.strip()
-            pattern = '|'.join(_self.target_patterns)
-            ndx = df[df['Market_and_Exchange_Names'].str.contains(pattern, na=False, case=False)].copy()
+            # Robuste Filterlogik
+            mask = df['Market_and_Exchange_Names'].str.contains('|'.join(_self.valid_names), na=False, case=False)
+            ndx = df[mask].copy()
             
-            if ndx.empty: return None
-
+            if ndx.empty:
+                return None
+            
             ndx['Date'] = pd.to_datetime(ndx['As_of_Date_In_Form_YYMMDD'], format='%y%m%d')
             ndx = ndx.sort_values('Date')
 
-            # Quantitative Metrics
-            ndx['Net'] = ndx['Lev_Money_Positions_Long_All'] - ndx['Lev_Money_Positions_Short_All']
-            ndx['Total'] = ndx['Lev_Money_Positions_Long_All'] + ndx['Lev_Money_Positions_Short_All']
-            ndx['Conviction'] = (ndx['Lev_Money_Positions_Long_All'] / ndx['Total']) * 100
+            # Quantitative Transformationen
+            ndx['Netto'] = ndx['Lev_Money_Positions_Long_All'] - ndx['Lev_Money_Positions_Short_All']
+            ndx['Total_Ex'] = ndx['Lev_Money_Positions_Long_All'] + ndx['Lev_Money_Positions_Short_All']
+            ndx['Conviction'] = (ndx['Lev_Money_Positions_Long_All'] / ndx['Total_Ex']) * 100
             
-            # Statistics (52-Week Window)
-            ndx['MA_52'] = ndx['Net'].rolling(52, min_periods=1).mean()
-            ndx['STD_52'] = ndx['Net'].rolling(52, min_periods=1).std()
-            ndx['Z_Score'] = (ndx['Net'] - ndx['MA_52']) / ndx['STD_52']
+            # Statistische Glättung (26 Wochen Fenster)
+            window = 26
+            ndx['Net_MA'] = ndx['Netto'].rolling(window).mean()
+            ndx['Net_STD'] = ndx['Netto'].rolling(window).std()
+            ndx['Z_Score'] = (ndx['Netto'] - ndx['Net_MA']) / ndx['Net_STD']
             
-            # Momentum
-            ndx['Net_Change'] = ndx['Net'].diff()
-            ndx['Conv_Change'] = ndx['Conviction'].diff()
+            # Differenzen für Delta-Analyse
+            ndx['Net_Change'] = ndx['Netto'].diff()
+            ndx['OI_Change'] = ndx['Open_Interest_All'].diff()
             
             return ndx
-        except: return None
+        except Exception:
+            return None
 
-# --- UI COMPONENTS ---
-def draw_top_bar():
+# --- UI COMPONENT LIBRARY ---
+def draw_header(current_date):
+    """Rendered den Terminal-Header mit Status-Informationen."""
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown(f"""
+            <div style='margin-bottom: 30px;'>
+                <div class='t-label' style='color:var(--cyan-glow)'>QUANTUM ANALYTICS // NODE_01</div>
+                <h1 style='margin:0; font-size: 48px; font-weight: 100; color: white; letter-spacing: -2px;'>
+                    NASDAQ <span style='font-weight: 700; color:var(--cyan-glow)'>100</span> CORE
+                </h1>
+            </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+            <div style='text-align: right; padding-top: 10px;'>
+                <div class='status-pill'><span class='pulse'></span> SYSTEM_UP_STREAM</div>
+                <div style='font-size: 22px; font-weight: 700; margin-top: 5px;'>{current_date.strftime('%Y-%m-%d')}</div>
+                <div class='t-label'>UTC: {datetime.utcnow().strftime('%H:%M:%S')}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+def render_kpi(label, value, delta, is_zscore=False):
+    """Generiert eine einzelne KPI-Karte mit intelligenter Farbsteuerung."""
+    # Stabile Farblogik ohne Typ-Umwandlungsfehler
+    if is_zscore:
+        color_class = "t-bull" if delta > 0 else "t-bear"
+        delta_str = f"{delta:+.2f} σ"
+    else:
+        color_class = "t-bull" if delta >= 0 else "t-bear"
+        delta_str = f"{int(delta):+,}" if not is_zscore else ""
+
     st.markdown(f"""
-        <div class="status-bar">
-            <div><span class="pulse"></span> SYSTEM_LIVE // NODE_01_BRD</div>
-            <div>UTC {datetime.utcnow().strftime('%H:%M:%S')} // 2026-Q2</div>
+        <div class='quantum-card'>
+            <div class='t-label'>{label}</div>
+            <div class='t-value'>{value}</div>
+            <div class='t-delta {color_class}'>{delta_str} <span style='color:var(--text-dim)'>vs PREV</span></div>
         </div>
     """, unsafe_allow_html=True)
 
-def render_metric_box(title, value, raw_delta, suffix="", is_percent=False):
-    delta_class = "delta-positive" if raw_delta >= 0 else "delta-negative"
-    sign = "+" if raw_delta >= 0 else ""
-    formatted_delta = f"{sign}{raw_delta:.2f}%" if is_percent else f"{sign}{int(raw_delta):,}"
+def render_intelligence_panel(curr, df):
+    """Berechnet und zeigt das Markt-Regime und die Gauges an."""
+    col_l, col_r = st.columns([1, 1.2])
     
-    st.markdown(f"""
-        <div class="terminal-card">
-            <div class="label">{title}</div>
-            <div class="value-large">{value}</div>
-            <div class="{delta_class}">{formatted_delta} <span style="color:var(--text-dim)">{suffix}</span></div>
-        </div>
-    """, unsafe_allow_html=True)
-
-def render_expert_panel(curr, df):
-    st.write("")
-    col_a, col_b = st.columns([1.2, 1])
-    
-    with col_a:
-        st.markdown('<div class="label" style="margin-bottom:15px;">Alpha Intelligence Output</div>', unsafe_allow_html=True)
+    with col_l:
+        st.markdown("<div class='t-label' style='margin-bottom:15px;'>Decision Matrix</div>", unsafe_allow_html=True)
         z = curr['Z_Score']
-        change = curr['Net_Change']
         
-        # Expert System Logic
-        if z < -2.2:
-            status, color, advice = "EXTREME CAPITULATION", "var(--bear-color)", "Institutionelle Short-Positionierung auf historischem Extrem. Hohes Risiko für einen 'Vertical Squeeze'. Alle Shorts decken."
-        elif z < -1.0 and change < 0:
-            status, color, advice = "BEARISH TREND REINFORCEMENT", "var(--text-dim)", "Hedgefonds bauen Shorts systematisch aus. Das Momentum liegt bei den Verkäufern. Trendfortsetzung wahrscheinlich."
+        # Expert Logic Matrix
+        if z < -2.1:
+            title, mood, border = "CRITICAL_OVERSOLD", "Hedgefonds am historischen Verkaufslimit. Hohe Squeeze-Wahrscheinlichkeit.", "var(--bear-red)"
+        elif z < -1.0:
+            title, mood, border = "BEARISH_FLOW", "Trend ist intakt. Institutionelle erhöhen Short-Exposition moderat.", "var(--text-dim)"
         elif z > 1.8:
-            status, color, advice = "DISTRIBUTION OVERHEAT", "var(--bull-color)", "Long-Exponierung nähert sich dem Erschöpfungspunkt. Risiko für plötzliche Gewinnmitnahmen steigt massiv."
-        elif change > 15000:
-            status, color, advice = "INSTITUTIONAL REVERSAL", "var(--accent-color)", "Massives Short-Covering detektiert. Das Smart Money wechselt die Richtung. Möglicher lokaler Boden."
+            title, mood, border = "OVERBOUGHT_LIMIT", "Markt ist überhitzt. Institutionelle beginnen mit Distribution.", "var(--bull-green)"
         else:
-            status, color, advice = "NEUTRAL FLOW", "white", "Keine statistische Anomalie detektiert. Markt bewegt sich im Rahmen der normalen Volatilität."
+            title, mood, border = "NEUTRAL_STANCE", "Seitwärts-Momentum. Keine signifikante Abweichung vom Mittelwert.", "white"
 
         st.markdown(f"""
-            <div class="terminal-card pixel-border" style="min-height: 280px;">
-                <h2 style="color:{color}; font-family:'Fira Code'; margin-top:0;">{status}</h2>
-                <p style="font-size:16px; line-height:1.6;">{advice}</p>
-                <div style="margin-top:30px; border-top:1px solid var(--border-color); padding-top:15px;">
-                    <span class="label">Volatility Regime:</span> <span style="font-family:'Fira Code'; color:var(--accent-color);">{'HIGH' if abs(z) > 1.5 else 'NORMAL'}</span>
+            <div class='quantum-card' style='border-right: 4px solid {border}; min-height: 280px;'>
+                <h2 style='color:white; margin-top:0;'>{title}</h2>
+                <p style='color:var(--text-silver); font-size:16px; line-height:1.6;'>{mood}</p>
+                <div style='margin-top:40px;'>
+                    <div class='t-label'>Volatility Regime</div>
+                    <div style='background:var(--border-dim); height:4px; margin-top:10px;'>
+                        <div style='background:var(--cyan-glow); width:{abs(z)*20}%; height:4px;'></div>
+                    </div>
                 </div>
             </div>
         """, unsafe_allow_html=True)
 
-    with col_b:
-        st.markdown('<div class="label" style="margin-bottom:15px;">Historical Context Gauge</div>', unsafe_allow_html=True)
+    with col_r:
+        st.markdown("<div class='t-label' style='margin-bottom:15px;'>Relative Exposure Index</div>", unsafe_allow_html=True)
+        # Stabile Plotly-Implementierung ohne 'config'-Argument für maximale Kompatibilität
         fig = go.Figure(go.Indicator(
-            mode = "gauge+number", value = curr['Net'],
-            number = {'font': {'color': 'white', 'family': 'Fira Code', 'size': 30}, 'valueformat': ','},
+            mode = "gauge+number",
+            value = curr['Netto'],
+            number = {'font': {'color': 'white', 'family': 'JetBrains Mono', 'size': 32}, 'valueformat': ','},
             gauge = {
-                'axis': {'range': [df['Net'].min(), df['Net'].max()], 'tickcolor': "#475569", 'tickfont': {'size': 8}},
-                'bar': {'color': "var(--accent-color)", 'thickness': 0.15},
+                'axis': {'range': [df['Netto'].min(), df['Netto'].max()], 'tickcolor': "#44444a"},
+                'bar': {'color': "var(--cyan-glow)", 'thickness': 0.1},
                 'bgcolor': "rgba(0,0,0,0)",
                 'steps': [
-                    {'range': [df['Net'].min(), df['MA_52'] - df['STD_52']], 'color': 'rgba(255, 51, 102, 0.1)'},
-                    {'range': [df['MA_52'] + df['STD_52'], df['Net'].max()], 'color': 'rgba(0, 255, 170, 0.1)'}
+                    {'range': [df['Netto'].min(), 0], 'color': 'rgba(255, 34, 85, 0.1)'},
+                    {'range': [0, df['Netto'].max()], 'color': 'rgba(0, 255, 136, 0.1)'}
                 ],
-                'threshold': {'line': {'color': "white", 'width': 2}, 'value': curr['Net']}
+                'threshold': {'line': {'color': "white", 'width': 3}, 'value': curr['Netto']}
             }
         ))
-        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', height=300, margin=dict(t=20, b=0, l=30, r=30))
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', height=280, margin=dict(t=0, b=0, l=40, r=40))
+        st.plotly_chart(fig, use_container_width=True) # FIX: config entfernt für Bildschirmfoto_12-5-2026_202517_cyzdddnva5dyqfbhq6iahv.streamlit.app.jpg
 
-# --- MAIN EXECUTION ---
+# --- BOOTSTRAP PROCESS ---
 def main():
-    # Header
-    st.markdown('<h1 style="color:white; margin-bottom:5px; font-weight:700;">NASDAQ <span style="color:var(--accent-color)">QUANTUM</span></h1>', unsafe_allow_html=True)
-    draw_top_bar()
-
-    engine = QuantumEngine()
-    data = engine.get_institutional_flow()
+    engine = QuantumDataEngine()
+    df = engine.fetch_stream()
     
-    if data is not None:
-        latest = data.iloc[-1]
-        prev = data.iloc[-2] if len(data) > 1 else latest
+    if df is not None:
+        latest = df.iloc[-1]
+        prev = df.iloc[-2] if len(df) > 1 else latest
         
-        # Grid System
+        # 1. Header
+        draw_header(latest['Date'])
+        
+        # 2. Top Metrics Grid
         c1, c2, c3, c4 = st.columns(4)
-        
         with c1:
-            render_metric_box("Net Positioning", f"{int(latest['Net']):,}", latest['Net_Change'], "Contracts")
+            render_kpi("Net Positioning", f"{int(latest['Netto']):,}", latest['Net_Change'])
         with c2:
-            render_metric_box("Statistical Bias", f"{latest['Z_Score']:.2f} σ", latest['Z_Score'] - prev['Z_Score'], "StDev")
+            render_kpi("Z-Score (26W)", f"{latest['Z_Score']:.2f}", latest['Z_Score'] - prev['Z_Score'], is_zscore=True)
         with c3:
-            render_metric_box("Long Conviction", f"{latest['Conviction']:.1f}%", latest['Conv_Change'], "WoW", is_percent=True)
+            # Conviction Delta
+            render_kpi("Long Conviction", f"{latest['Conviction']:.1f}%", latest['Conviction'] - prev['Conviction'])
         with c4:
-            oi_change = latest['Open_Interest_All'] - prev['Open_Interest_All']
-            render_metric_box("Open Interest", f"{int(latest['Open_Interest_All']):,}", oi_change, "Contracts")
+            render_kpi("Open Interest", f"{int(latest['Open_Interest_All']):,}", latest['OI_Change'])
 
-        # Analysis
-        render_expert_panel(latest, data)
+        # 3. Main Analysis Section
+        render_intelligence_panel(latest, df)
         
-        # Ledger Section
+        # 4. Raw Data Ledger
         st.write("---")
-        with st.expander("DECRYPTED RAW DATA LEDGER"):
-            display_df = data[['Date', 'Net', 'Net_Change', 'Z_Score', 'Conviction', 'Open_Interest_All']].copy()
-            display_df = display_df.sort_values('Date', ascending=False).head(25)
-            display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
+        with st.expander("DECRYPTED RAW DATA LEDGER (SYSTEM_ACCESS)"):
+            ledger = df[['Date', 'Netto', 'Net_Change', 'Z_Score', 'Conviction', 'Open_Interest_All']].copy()
+            ledger = ledger.sort_values('Date', ascending=False).head(30)
+            ledger['Date'] = ledger['Date'].dt.strftime('%Y-%m-%d')
+            st.dataframe(ledger, use_container_width=True, hide_index=True)
             
-        st.markdown(f'<div style="text-align:center; color:var(--text-dim); font-size:10px; margin-top:50px;">PROTOTYPE_V8_STABLE // HASH_KEY: {hash(str(latest["Date"]))}</div>', unsafe_allow_html=True)
+        # 5. Bottom System Log
+        st.markdown(f"""
+            <div style='text-align: center; color: var(--text-dim); font-size: 9px; margin-top: 50px; font-family: "JetBrains Mono";'>
+                END_OF_LINE // PROTOCOL: COT_TFF // HASH: {hash(str(latest['Netto']))} // SECURE_LINK_ACTIVE
+            </div>
+        """, unsafe_allow_html=True)
     else:
-        st.error("FAILURE: Data stream interrupted. Check CFTC Connectivity.")
-        if st.button("REBOOT SYSTEM", kind="primary"): st.rerun()
+        st.error("FAILURE: Data Stream corrupted or CFTC Server unreachable.")
+        if st.button("REINITIALIZE SYSTEM"): st.rerun()
 
 if __name__ == "__main__":
     main()
