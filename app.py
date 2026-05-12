@@ -3,20 +3,24 @@ import pandas as pd
 import requests
 import io
 import zipfile
-from datetime import datetime
 
-# Design-Einstellungen
-st.set_page_config(page_title="Nasdaq COT Pro-Tracker", layout="wide")
+# Design & Header
+st.set_page_config(page_title="Nasdaq COT Insider", layout="wide")
 
-# CSS für ein besseres Design
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; }
-    .stMetric { background-color: #1f2937; padding: 15px; border-radius: 10px; border: 1px solid #374151; }
+    .sentiment-box {
+        padding: 20px;
+        border-radius: 15px;
+        text-align: center;
+        font-weight: bold;
+        font-size: 24px;
+        margin-bottom: 20px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📊 Nasdaq 100 COT Dashboard (TFF Report)")
+st.title("📊 Nasdaq 100 Sentiment-Check")
 
 @st.cache_data(ttl=3600)
 def get_cot_data():
@@ -30,61 +34,41 @@ def get_cot_data():
     df.columns = df.columns.str.strip()
     nasdaq = df[df['Market_and_Exchange_Names'].str.contains("NASDAQ-100", na=False)].copy()
     
-    # Datum formatieren (aus 260505 wird 05.05.2026)
     def format_date(d_str):
         d_str = str(d_str)
-        return f"{d_str[4:6]}.{d_str[2:4]}.20{d_str[0:2]}"
+        return f"{d_str[4:6]}.{d_str[2:4]}." # Kürzeres Format für den Chart
 
-    nasdaq['Datum_Clean'] = nasdaq['As_of_Date_In_Form_YYMMDD'].apply(format_date)
+    nasdaq['Datum'] = nasdaq['As_of_Date_In_Form_YYMMDD'].apply(format_date)
+    nasdaq['Netto'] = nasdaq['Lev_Money_Positions_Long_All'] - nasdaq['Lev_Money_Positions_Short_All']
     
-    # Mapping
-    cols = {
-        'Lev_Money_Positions_Long_All': 'Hedgefonds_Long',
-        'Lev_Money_Positions_Short_All': 'Hedgefonds_Short',
-        'Asset_Mgr_Positions_Long_All': 'Insti_Long',
-        'Asset_Mgr_Positions_Short_All': 'Insti_Short'
-    }
-    nasdaq = nasdaq.rename(columns=cols)
-    nasdaq['Netto_Hedgefonds'] = nasdaq['Hedgefonds_Long'] - nasdaq['Hedgefonds_Short']
-    
-    return nasdaq
+    # Nur die letzten 20 Wochen für bessere Übersicht
+    return nasdaq.head(20).iloc[::-1]
 
 try:
     data = get_cot_data()
-    latest = data.iloc[0]
+    latest_netto = data.iloc[-1]['Netto']
     
-    # Obere Metriken
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Letzter Bericht vom", latest['Datum_Clean'])
-    c2.metric("Netto-Position Hedgefonds", f"{int(latest['Netto_Hedgefonds']):,}")
-    
-    # Veränderung berechnen
-    if len(data) > 1:
-        change = latest['Netto_Hedgefonds'] - data.iloc[1]['Netto_Hedgefonds']
-        c3.metric("Wöchentliche Änderung", f"{int(change):,}", delta=int(change))
+    # 1. KLARE STATUS ANZEIGE
+    if latest_netto < -50000:
+        st.markdown('<div class="sentiment-box" style="background-color: #7f1d1d; color: white;">⚠️ EXTREMES SHORT-SENTIMENT (Hedgefonds wetten stark gegen Nasdaq)</div>', unsafe_allow_html=True)
+    elif latest_netto < 0:
+        st.markdown('<div class="sentiment-box" style="background-color: #374151; color: white;">📉 LEICHT BÄRISCH (Mehr Shorts als Longs)</div>', unsafe_allow_html=True)
+    elif latest_netto > 50000:
+        st.markdown('<div class="sentiment-box" style="background-color: #064e3b; color: white;">🚀 EXTREME GIER (Hedgefonds sind massiv Long)</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="sentiment-box" style="background-color: #1e3a8a; color: white;">⚖️ NEUTRALER BEREICH</div>', unsafe_allow_html=True)
 
-    # Chart Bereich
-    st.subheader("📈 Sentiment-Verlauf (Leveraged Money)")
-    st.line_chart(data.set_index('Datum_Clean')['Netto_Hedgefonds'])
+    # 2. ÜBERSICHTLICHER CHART
+    st.subheader("Werden die Wetten mehr oder weniger?")
+    # Balkendiagramm zeigt die Richtung viel klarer als eine dünne Linie
+    st.bar_chart(data.set_index('Datum')['Netto'])
 
-    # --- BESCHREIBUNGS SEKTION ---
-    with st.expander("📖 Was bedeuten diese Zahlen? (Erklärung)"):
-        st.write("""
-        ### Wer sind die Akteure?
-        1. **Leveraged Money (Hedgefonds):** Das ist das 'schnelle Geld'. Diese Akteure spekulieren auf Trends. Wenn sie stark Long sind, ist die Stimmung bullisch. Sind sie extrem Short (wie aktuell), kann das auf einen Wendepunkt hindeuten.
-        2. **Asset Manager (Instis):** Pensionskassen und Versicherungen. Sie halten meist langfristige Long-Positionen zur Absicherung.
-        
-        ### Was bedeutet 'Netto-Position'?
-        Die Zahl ergibt sich aus **Long-Kontrakten minus Short-Kontrakten**. 
-        *   **Positive Zahl:** Die Gruppe wettet mehrheitlich auf steigende Kurse.
-        *   **Negative Zahl:** Die Gruppe wettet mehrheitlich auf fallende Kurse.
-        
-        ### Warum ist das wichtig?
-        Der COT-Bericht hilft dir zu sehen, ob die 'Profis' gerade aussteigen oder massiv gegen den aktuellen Trend wetten. Oft dreht der Markt, wenn eine Gruppe eine extrem hohe Position (ein 'Extrem-Sentiment') erreicht hat.
-        """)
-
-    st.write("### 📋 Alle Daten (Tabellenansicht)")
-    st.dataframe(data[['Datum_Clean', 'Hedgefonds_Long', 'Hedgefonds_Short', 'Netto_Hedgefonds']])
+    # 3. EINFACHE ERKLÄRUNG
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info(f"**Aktueller Wert: {int(latest_netto):,}**\n\nDas bedeutet, Hedgefonds halten aktuell {abs(int(latest_netto)):,} mehr Short- als Long-Verträge.")
+    with col2:
+        st.help("Wenn der Balken nach unten geht, bauen Profis ihre Absicherungen (Shorts) aus. Geht er nach oben, setzen sie auf eine Rallye.")
 
 except Exception as e:
     st.error(f"Fehler: {e}")
