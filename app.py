@@ -4,24 +4,22 @@ import requests
 import io
 import zipfile
 
-# --- DESIGN: ULTRA DARK SUBMARINE ---
+# --- DESIGN: ABSOLUTE MIDNIGHT ---
 st.set_page_config(page_title="MakroBase_Final", layout="wide")
 st.markdown("""<style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
     
-    /* Extrem dunkles Midnight (nahezu Schwarz) */
-    .stApp { background-color: #00040a; color: #00ff41; font-family: 'JetBrains Mono', monospace; }
+    /* Nahezu 100% Schwarz für maximale Konzentration */
+    .stApp { background-color: #000205; color: #00ff41; font-family: 'JetBrains Mono', monospace; }
     
-    /* Karten-Design */
     .status-card { 
         padding: 25px; 
         border-radius: 12px; 
         border: 1px solid #001d3d; 
         margin-bottom: 25px;
-        background-color: #000814;
+        background-color: #00050a;
     }
     
-    /* Farben für Kauf/Verkauf */
     .pos-green { color: #00ff41 !important; font-weight: bold; }
     .neg-red { color: #ff4136 !important; font-weight: bold; }
     
@@ -57,58 +55,59 @@ else:
     # Aktuelle Werte
     n_long, n_short = int(n_data.iloc[0]['Lev_Money_Positions_Long_All']), int(n_data.iloc[0]['Lev_Money_Positions_Short_All'])
     n_net = n_long - n_short
+    n_oi = int(n_data.iloc[0]['Open_Interest_All'])
     
     g_long, g_short = int(g_data.iloc[0]['M_Money_Positions_Long_All']), int(g_data.iloc[0]['M_Money_Positions_Short_All'])
     g_net = g_long - g_short
-
-    # Trend-Berechnung (Vergleich zur Vorwoche)
-    n_net_prev = int(n_data.iloc[1]['Lev_Money_Positions_Long_All']) - int(n_data.iloc[1]['Lev_Money_Positions_Short_All'])
-    n_trend = n_net - n_net_prev
 
     st.title("🚢 MAKRO_BASE // OPERATIVES_TERMINAL")
     st.write(f"STEUERUNG AKTIV | PROTOKOLL VOM: {clean_date}")
     st.write("---")
 
     # --- LAGEBEURTEILUNG ---
+    st.subheader("STRATEGISCHE LAGEBEURTEILUNG")
     if n_net < -150000 and g_net > 50000:
         st.markdown(f"""<div class='status-card' style='border-left: 5px solid #ff4136;'>
             <h3 style='color: #ff4136;'>Lagebericht: Kritische Fluchtbewegung</h3>
-            <p>Die Akteure ziehen massiv Kapital aus dem Nasdaq ab (<span class='neg-red'>{n_net:,}</span>) 
-            und verstärken ihre Positionen im Gold (<span class='pos-green'>{g_net:,}</span>). 
-            Das System erkennt eine strategische Absicherung gegen fallende Aktienkurse.</p>
+            <p>Kapitalabfluss aus Nasdaq: <span class='neg-red'>{n_net:,}</span> | Sicherheitsaufbau Gold: <span class='pos-green'>{g_net:,}</span>. 
+            Ein seltener Zustand massiver Risiko-Vermeidung.</p>
         </div>""", unsafe_allow_html=True)
     else:
         st.markdown(f"""<div class='status-card' style='border-left: 5px solid #0074D9;'>
-            <h3 style='color: #0074D9;'>Lagebericht: Standard-Operation</h3>
-            <p>Der Markt zeigt aktuell ein ausgeglichenes Verhalten. Keine extremen Fluchtbewegungen in Gold erkennbar.</p>
+            <h3 style='color: #0074D9;'>Lagebericht: Operation Normalzustand</h3>
+            <p>Keine außergewöhnlichen Fluchtbewegungen in den sicheren Hafen (Gold) erkennbar.</p>
         </div>""", unsafe_allow_html=True)
 
-    # --- METRIKEN MIT FARB-LOGIK ---
+    # --- KRAFT-INDIZES ---
     col1, col2 = st.columns(2)
     with col1:
         color = "neg-red" if n_net < 0 else "pos-green"
         st.markdown(f"NASDAQ KRAFT-INDEX<br><span class='{color}' style='font-size:35px;'>{n_net:,}</span>", unsafe_allow_html=True)
-        st.write(f"Trend zur Vorwoche: {'📈' if n_trend > 0 else '📉'} {n_trend:,}")
 
     with col2:
         color = "pos-green" if g_net > 0 else "neg-red"
         st.markdown(f"GOLD ABSICHERUNGS-WERT<br><span class='{color}' style='font-size:35px;'>{g_net:,}</span>", unsafe_allow_html=True)
-        st.write("Wird als Schutzschild gegen Marktschwankungen genutzt.")
 
-    # --- NEU: TREND-RADAR (Informativer als nur Historie) ---
+    # --- NEU: INSTITUTIONELLE LIQUIDITÄTS-MATRIX (Anstelle Trend-Radar) ---
     st.write("---")
-    st.subheader("📡 STRATEGISCHER TREND-RADAR")
+    st.subheader("🌐 INSTITUTIONELLE LIQUIDITÄTS-MATRIX")
     
-    c1, c2, c3 = st.columns(3)
-    c1.write("**MARKT-STÄRKE**")
-    c1.write(f"Käufer: <span class='pos-green'>{n_long:,}</span>", unsafe_allow_html=True)
-    c1.write(f"Verkäufer: <span class='neg-red'>{n_short:,}</span>", unsafe_allow_html=True)
+    m1, m2, m3 = st.columns(3)
     
-    c2.write("**DOMINANZ**")
-    dom = (n_short / (n_long + n_short)) * 100
-    c2.write(f"Short-Anteil: {dom:.1f}%")
-    c2.write("Über 60% = Aggressiv")
+    with m1:
+        st.write("**Dichte der Wetten (Nasdaq)**")
+        n_density = ( (n_long + n_short) / n_oi ) * 100
+        st.write(f"Auslastung: {n_density:.1f}%")
+        st.write("Erklärung: Zeigt, wie viel Prozent des Marktes allein durch Hedgefonds kontrolliert werden.")
 
-    c3.write("**GOLD-STATUS**")
-    c3.write(f"Long-Power: <span class='pos-green'>{g_long:,}</span>", unsafe_allow_html=True)
-    c3.write(f"Short-Power: <span class='neg-red'>{g_short:,}</span>", unsafe_allow_html=True)
+    with m2:
+        st.write("**Gleichgewichts-Check**")
+        bias = "EXTREME SHORT-SEITE" if n_short > (n_long * 3) else "NEUTRAL"
+        st.write(f"Status: <span class='neg-red'>{bias}</span>" if "SHORT" in bias else f"Status: {bias}", unsafe_allow_html=True)
+        st.write("Erklärung: Bei einem Verhältnis von 3:1 steigt das Risiko für einen plötzlichen Preissprung (Squeeze).")
+
+    with m3:
+        st.write("**Kapital-Engagement**")
+        g_total = g_long + g_short
+        st.write(f"Aktive Kontrakte: {g_total:,}")
+        st.write("Erklärung: Die Gesamtmenge der Gold-Wetten der Profis. Höhere Werte bedeuten stärkere Überzeugung.")
