@@ -3,90 +3,82 @@ import pandas as pd
 import requests
 import io
 import zipfile
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
 
-# --- SETUP ---
-st.set_page_config(page_title="MakroBase | V19", layout="wide")
+# --- RAW TERMINAL STYLE ---
+st.set_page_config(page_title="MakroBase RAW", layout="wide")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-    .stApp { background-color: #010101; color: #d1d5db; font-family: 'JetBrains Mono', monospace; }
-    .card { background: #080808; border: 1px solid #1a1a1a; padding: 25px; border-radius: 4px; margin-bottom: 15px; }
-    .h-val { font-size: 42px; color: white; font-weight: 700; margin: 10px 0; }
-    .label { font-size: 11px; color: #00f2ff; text-transform: uppercase; letter-spacing: 2px; }
-    .explainer { color: #888; font-size: 13px; line-height: 1.6; border-left: 2px solid #333; padding-left: 15px; }
+    .stApp { background-color: #000; color: #fff; font-family: 'JetBrains Mono', monospace; }
+    .header { color: #00f2ff; border-bottom: 2px solid #00f2ff; padding-bottom: 10px; margin-bottom: 20px; }
+    .metric-box { border: 1px solid #333; padding: 20px; background: #050505; }
+    .label { color: #00f2ff; font-size: 12px; }
+    .val { font-size: 48px; font-weight: bold; }
+    .interpretation { color: #ff2255; font-size: 14px; margin-top: 10px; border-top: 1px solid #222; padding-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- DATA HUB (FIXED FILTER) ---
 @st.cache_data(ttl=3600)
-def get_clean_data():
+def fetch_raw_cot():
     try:
+        # Direkter Zugriff auf die 2026er Rohdaten der CFTC
         url = "https://www.cftc.gov/files/dea/history/fut_fin_txt_2026.zip"
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=15)
         with zipfile.ZipFile(io.BytesIO(r.content)) as z:
             df = pd.read_csv(z.open(z.namelist()[0]), low_memory=False)
-        
         df.columns = df.columns.str.strip()
-        
-        # PRÄZISER FILTER: Nur E-MINI NASDAQ-100
-        # Das verhindert die Dubletten aus Bildschirmfoto_12-5-2026_231817_cyzdddnva5dyqfbhq6iahv.streamlit.app.jpg
-        ndx = df[df['Market_and_Exchange_Names'].str.contains("E-MINI NASDAQ-100", na=False, case=False)].copy()
-        
+        # Fokus auf den E-Mini Nasdaq-100
+        ndx = df[df['Market_and_Exchange_Names'].str.contains("E-MINI NASDAQ-100", na=False)].copy()
         ndx['Date'] = pd.to_datetime(ndx['As_of_Date_In_Form_YYMMDD'], format='%y%m%d')
-        ndx = ndx.sort_values('Date').drop_duplicates(subset=['Date']) # Sicherheitshalber Dubletten-Check
-        
-        # Metriken
-        ndx['Net'] = ndx['Lev_Money_Positions_Long_All'] - ndx['Lev_Money_Positions_Short_All']
-        ndx['Z'] = (ndx['Net'] - ndx['Net'].rolling(26).mean()) / ndx['Net'].rolling(26).std()
-        
-        def interpret(z):
-            if pd.isna(z): return "CALIBRATING"
-            if z > 1.8: return "EXTREM_EUFORIE"
-            if z < -1.8: return "EXTREM_PANIK"
-            return "NEUTRAL"
-        
-        ndx['Interpretation'] = ndx['Z'].apply(interpret)
+        ndx = ndx.sort_values('Date', ascending=False)
         return ndx
     except: return None
 
-df = get_clean_data()
+df = fetch_raw_cot()
 
 if df is not None:
-    curr = df.iloc[-1]
-    st.markdown(f"# MakroBase // <span style='color:#00f2ff;'>Intelligence Node</span>", unsafe_allow_html=True)
+    # Die aktuellsten Daten (Top of the List)
+    latest = df.iloc[0]
     
-    t1, t2, t3 = st.tabs(["📊 DASHBOARD", "📜 HISTORICAL_LOGS", "🧬 LOGIC"])
+    st.markdown("<h1 class='header'>MakroBase // LIVE_COT_FEED</h1>", unsafe_allow_html=True)
     
-    with t1:
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown(f"<div class='card'><div class='label'>Net Power (E-MINI)</div><div class='h-val'>{int(curr['Net']):,}</div></div>", unsafe_allow_html=True)
-        with c2:
-            st.markdown(f"<div class='card'><div class='label'>Z-Score</div><div class='h-val'>{curr['Z']:.2f} σ</div></div>", unsafe_allow_html=True)
-        with c3:
-            st.markdown(f"<div class='card'><div class='label'>Signal</div><div class='h-val' style='color:#00f2ff; font-size:26px;'>{curr['Interpretation']}</div></div>", unsafe_allow_html=True)
+    # ECHTE DATEN SECTION
+    c1, c2, c3 = st.columns(3)
+    
+    longs = int(latest['Lev_Money_Positions_Long_All'])
+    shorts = int(latest['Lev_Money_Positions_Short_All'])
+    net = longs - shorts
+    
+    with c1:
+        st.markdown(f"""<div class='metric-box'><div class='label'>LONG POSITIONS (HEDGEFUNDS)</div><div class='val'>{longs:,}</div></div>""", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"""<div class='metric-box'><div class='label'>SHORT POSITIONS (HEDGEFUNDS)</div><div class='val'>{shorts:,}</div></div>""", unsafe_allow_html=True)
+    with c3:
+        st.markdown(f"""<div class='metric-box'><div class='label'>NET POWER (OVERALL BIAS)</div><div class='val' style='color:#00f2ff;'>{net:,}</div></div>""", unsafe_allow_html=True)
 
-        fig = go.Figure(go.Scatter(x=df['Date'], y=df['Net'], line=dict(color='#00f2ff', width=2), fill='tozeroy'))
-        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="#555", height=400)
-        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("---")
+    
+    # WAS BEDEUTET DAS?
+    st.subheader("DATA_INTERPRETATION")
+    if net < -150000:
+        desc = "EXTREME_SHORT_POSITIONING: Die Hedgefonds sind massiv 'short'. Historisch gesehen ist das oft ein Zeichen für eine Markt-Bodenbildung, da fast jeder bereits verkauft hat (Short Squeeze Gefahr)."
+    elif net > 50000:
+        desc = "EXTREME_LONG_POSITIONING: Die Hedgefonds sind übermütig. Das Risiko für einen Rücksetzer steigt massiv."
+    else:
+        desc = "NEUTRAL_FLOW: Keine extremen Ungleichgewichte zwischen Bullen und Bären."
+    
+    st.info(f"STATUS_REPORT: {desc}")
 
-    with t2:
-        st.markdown("### CLEAN DATA LOG (SINGLE ENTRY PER WEEK)")
-        # Schöne Formatierung für die Historie
-        log_display = df[['Date', 'Net', 'Z', 'Interpretation']].copy().sort_values('Date', ascending=False)
-        log_display['Date'] = log_display['Date'].dt.strftime('%d.%m.%Y')
-        log_display['Net'] = log_display['Net'].apply(lambda x: f"{int(x):,}")
-        log_display['Z'] = log_display['Z'].apply(lambda x: f"{x:.2f} σ" if not pd.isna(x) else "N/A")
-        
-        st.table(log_display.head(20)) # Table ist oft klarer als Dataframe für statische Logs
-
-    with t3:
-        st.markdown("### SYSTEM_LOGIC_UPDATE")
-        st.info("Dubletten-Bereinigung aktiv: Filter wurde auf 'E-MINI NASDAQ-100' fixiert.")
-        st.write("Durch die Beschränkung auf den E-mini Kontrakt erhalten wir die präziseste Abbildung der Hedgefonds-Aktivität. Die Daten aus den Logs sind nun eindeutig und mathematisch korrekt für die Z-Score Berechnung.")
+    # DER HISTORISCHE LOG (Zahlen ohne Schnickschnack)
+    st.markdown("### HISTORICAL_RAW_LOGS")
+    history = df[['Date', 'Lev_Money_Positions_Long_All', 'Lev_Money_Positions_Short_All']].copy()
+    history['NET_POSITION'] = history['Lev_Money_Positions_Long_All'] - history['Lev_Money_Positions_Short_All']
+    history['Date'] = history['Date'].dt.strftime('%d.%m.%Y')
+    
+    # Umbenennung für maximale Klarheit
+    history.columns = ['DATUM', 'LONGS (Fonds)', 'SHORTS (Fonds)', 'NETTO_BIAS']
+    st.table(history.head(10))
 
 else:
-    st.error("DATA_SYNC_FAILED")
+    st.error("UPLINK_FAILURE: Keine Verbindung zum CFTC-Server.")
