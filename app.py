@@ -5,21 +5,21 @@ import io
 import zipfile
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Nasdaq Alpha Speedometer", layout="centered")
+st.set_page_config(page_title="Nasdaq Alpha Gauge", layout="centered")
 
-# --- CLEAN TRADING DESIGN ---
+# --- ULTRA DARK DESIGN ---
 st.markdown("""
     <style>
-    .main { background-color: #000000; color: #ffffff; }
-    .decision-box {
-        background-color: #111827;
-        padding: 25px;
-        border-radius: 12px;
-        border: 2px solid #374151;
-        margin-top: 20px;
+    .main { background-color: #050505; color: #e2e8f0; }
+    .info-card {
+        background: #0f172a;
+        border: 1px solid #1e293b;
+        padding: 20px;
+        border-radius: 4px;
+        margin-top: 10px;
     }
-    .metric-label { color: #9ca3af; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
-    .metric-value { font-size: 36px; font-weight: bold; color: #ffffff; }
+    .label { color: #64748b; font-size: 12px; font-weight: bold; letter-spacing: 1px; }
+    .explanation { color: #94a3b8; font-size: 14px; line-height: 1.5; margin-bottom: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -40,66 +40,63 @@ try:
     data = get_cot_data()
     latest = data.iloc[0]
     val = int(latest['Netto'])
-    
-    # Historische Extremwerte für den Tacho
-    min_val = data['Netto'].min()
-    max_val = data['Netto'].max()
+    min_val, max_val = data['Netto'].min(), data['Netto'].max()
 
-    st.title("Nasdaq Insider Tacho")
-    st.write(f"Marktzustand basierend auf CFTC-Daten vom {latest['As_of_Date_In_Form_YYMMDD']}")
+    st.markdown("<h2 style='text-align: center; color: white;'>NASDAQ SENTIMENT INDEX</h2>", unsafe_allow_html=True)
 
-    # --- DER TACHO (STATT DIAGRAMM) ---
+    # --- DER OPTIMIERTE TACHO (OHNE BLAUEN BALKEN) ---
     fig = go.Figure(go.Indicator(
         mode = "gauge+number",
         value = val,
-        domain = {'x': [0, 1], 'y': [0, 1]},
-        title = {'text': "Hedgefonds Sentiment", 'font': {'size': 24, 'color': '#ffffff'}},
+        number = {'font': {'color': 'white', 'size': 50}, 'valueformat': ','},
         gauge = {
-            'axis': {'range': [min_val, max_val], 'tickwidth': 1, 'tickcolor': "white"},
-            'bar': {'color': "#3b82f6"},
-            'bgcolor': "rgba(0,0,0,0)",
-            'borderwidth': 2,
-            'bordercolor': "#374151",
+            'axis': {'range': [min_val, max_val], 'tickwidth': 1, 'tickcolor': "#475569"},
+            'bar': {'color': "rgba(0,0,0,0)"}, # HIER: Den blauen Balken unsichtbar gemacht!
+            'bgcolor': "#0f172a",
+            'borderwidth': 0,
             'steps': [
-                {'range': [min_val, min_val*0.6], 'color': '#7f1d1d'}, # Extrem Short
-                {'range': [min_val*0.6, 0], 'color': '#450a0a'},     # Short
-                {'range': [0, max_val], 'color': '#064e3b'}          # Long
+                {'range': [min_val, min_val*0.5], 'color': '#ef4444'}, # Rot
+                {'range': [min_val*0.5, 0], 'color': '#f59e0b'},       # Orange
+                {'range': [0, max_val], 'color': '#10b981'}           # Grün
             ],
             'threshold': {
-                'line': {'color': "white", 'width': 4},
-                'thickness': 0.75,
+                'line': {'color': "white", 'width': 5}, # Die weiße Nadel
+                'thickness': 0.8,
                 'value': val
             }
         }
     ))
 
-    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': "white", 'family': "Arial"}, height=350, margin=dict(t=0, b=0))
+    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', height=380, margin=dict(t=20, b=0, l=40, r=40))
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- DIE ENTSCHEIDUNGS-MATRIX ---
-    st.markdown("<div class='decision-box'>", unsafe_allow_html=True)
+    # --- DIE ÜBERSICHTLICHE BESCHREIBUNG ---
+    st.markdown("### 🔍 Was bedeuten diese Werte?")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("<p class='metric-label'>Positionierung</p>", unsafe_allow_html=True)
-        st.markdown(f"<p class='metric-value'>{val:,}</p>", unsafe_allow_html=True)
-        st.write("Hedgefonds wetten aktuell massiv gegen den Markt.")
-        
-    with col2:
-        st.markdown("<p class='metric-label'>Markt-Phase</p>", unsafe_allow_html=True)
-        phase = "⚠️ SHORT SQUEEZE GEFAHR" if val < -150000 else "📉 ABWÄRTSTREND"
-        st.markdown(f"<p class='metric-value' style='color:#ef4444;'>{phase}</p>", unsafe_allow_html=True)
-        st.write("Das Smart Money zieht sich zurück oder sichert ab.")
+        st.markdown("<div class='info-card'>", unsafe_allow_html=True)
+        st.markdown("<p class='label'>NETTO-EXPOSURE</p>", unsafe_allow_html=True)
+        st.markdown(f"**{val:,} Kontrakte**")
+        st.markdown("""<p class='explanation'>
+            Das ist das 'Gewicht' der Wetten. <br>
+            <b>Negativ:</b> Profis verdienen Geld, wenn der Markt fällt. <br>
+            <b>Positiv:</b> Profis verdienen Geld, wenn der Markt steigt.
+            </p>""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.write("---")
-    st.markdown("### 🛠️ Handlungs-Empfehlung")
-    if val < -100000:
-        st.warning("**KONTRA-CHANCE:** Die Stimmung ist so schlecht, dass ein Boden nahe sein könnte. Achte auf Umkehrsignale im Chart (z.B. RSI-Divergenz).")
-    else:
-        st.info("**TREND-FOLGE:** Die Profis sind pessimistisch. Vorsicht bei Long-Einstiegen, solange der Tacho tief im roten Bereich steht.")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown("<div class='info-card'>", unsafe_allow_html=True)
+        st.markdown("<p class='label'>KONTEXT-ANALYSE</p>", unsafe_allow_html=True)
+        if val < -150000:
+            st.markdown("<b style='color:#ef4444;'>EXTREM-BEREICH</b>")
+        else:
+            st.markdown("<b style='color:#f59e0b;'>ERHÖHTES RISIKO</b>")
+        st.markdown("""<p class='explanation'>
+            Wenn die Nadel im <b>roten Bereich</b> steht, ist der Markt 'überverkauft'. Oft folgt eine plötzliche Erholung (Short Squeeze).
+            </p>""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 except Exception as e:
     st.error(f"Fehler: {e}")
