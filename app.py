@@ -4,23 +4,22 @@ import requests
 import io
 import zipfile
 
-# Design & Header
-st.set_page_config(page_title="Nasdaq COT Insider", layout="wide")
+# Seite einrichten
+st.set_page_config(page_title="Nasdaq Sentiment", layout="centered")
 
+# Styling
 st.markdown("""
     <style>
-    .sentiment-box {
+    .reportview-container { background: #0e1117; }
+    .sentiment-card {
+        background-color: #1f2937;
         padding: 20px;
-        border-radius: 15px;
-        text-align: center;
-        font-weight: bold;
-        font-size: 24px;
-        margin-bottom: 20px;
+        border-radius: 10px;
+        border-left: 10px solid #ef4444;
+        margin-bottom: 25px;
     }
     </style>
     """, unsafe_allow_html=True)
-
-st.title("📊 Nasdaq 100 Sentiment-Check")
 
 @st.cache_data(ttl=3600)
 def get_cot_data():
@@ -30,45 +29,45 @@ def get_cot_data():
         fname = z.namelist()[0]
         with z.open(fname) as f:
             df = pd.read_csv(f, low_memory=False)
-    
     df.columns = df.columns.str.strip()
     nasdaq = df[df['Market_and_Exchange_Names'].str.contains("NASDAQ-100", na=False)].copy()
-    
-    def format_date(d_str):
-        d_str = str(d_str)
-        return f"{d_str[4:6]}.{d_str[2:4]}." # Kürzeres Format für den Chart
-
-    nasdaq['Datum'] = nasdaq['As_of_Date_In_Form_YYMMDD'].apply(format_date)
     nasdaq['Netto'] = nasdaq['Lev_Money_Positions_Long_All'] - nasdaq['Lev_Money_Positions_Short_All']
-    
-    # Nur die letzten 20 Wochen für bessere Übersicht
-    return nasdaq.head(20).iloc[::-1]
+    nasdaq['Datum'] = nasdaq['As_of_Date_In_Form_YYMMDD'].astype(str).apply(lambda x: f"{x[4:6]}.{x[2:4]}.")
+    return nasdaq
 
 try:
     data = get_cot_data()
-    latest_netto = data.iloc[-1]['Netto']
+    latest = data.iloc[0]
+    val = int(latest['Netto'])
     
-    # 1. KLARE STATUS ANZEIGE
-    if latest_netto < -50000:
-        st.markdown('<div class="sentiment-box" style="background-color: #7f1d1d; color: white;">⚠️ EXTREMES SHORT-SENTIMENT (Hedgefonds wetten stark gegen Nasdaq)</div>', unsafe_allow_html=True)
-    elif latest_netto < 0:
-        st.markdown('<div class="sentiment-box" style="background-color: #374151; color: white;">📉 LEICHT BÄRISCH (Mehr Shorts als Longs)</div>', unsafe_allow_html=True)
-    elif latest_netto > 50000:
-        st.markdown('<div class="sentiment-box" style="background-color: #064e3b; color: white;">🚀 EXTREME GIER (Hedgefonds sind massiv Long)</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="sentiment-box" style="background-color: #1e3a8a; color: white;">⚖️ NEUTRALER BEREICH</div>', unsafe_allow_html=True)
+    # 1. Headline & Status
+    st.title("Nasdaq 100 Sentiment")
+    
+    status_text = "EXTREM BÄRISCH" if val < -50000 else "NEUTRAL"
+    st.markdown(f"""
+        <div class="sentiment-card">
+            <p style="margin:0; color:#9ca3af; font-size:14px;">AKTUELLER STATUS</p>
+            <h2 style="margin:0; color:white;">{status_text} ({val:,})</h2>
+            <p style="margin:0; color:#ef4444; font-size:14px;">Hedgefonds wetten massiv gegen den Markt.</p>
+        </div>
+    """, unsafe_allow_html=True)
 
-    # 2. ÜBERSICHTLICHER CHART
-    st.subheader("Werden die Wetten mehr oder weniger?")
-    # Balkendiagramm zeigt die Richtung viel klarer als eine dünne Linie
-    st.bar_chart(data.set_index('Datum')['Netto'])
+    # 2. Kompakter Chart (Nur die letzten 12 Wochen für Fokus)
+    st.subheader("Wochen-Trend (Netto-Positionen)")
+    chart_df = data.head(12).iloc[::-1]
+    st.bar_chart(chart_df.set_index('Datum')['Netto'], height=250)
 
-    # 3. EINFACHE ERKLÄRUNG
+    # 3. Historische Einordnung
+    st.subheader("Historischer Vergleich")
+    max_short = data['Netto'].min()
+    avg_short = data['Netto'].mean()
+    
     col1, col2 = st.columns(2)
-    with col1:
-        st.info(f"**Aktueller Wert: {int(latest_netto):,}**\n\nDas bedeutet, Hedgefonds halten aktuell {abs(int(latest_netto)):,} mehr Short- als Long-Verträge.")
-    with col2:
-        st.help("Wenn der Balken nach unten geht, bauen Profis ihre Absicherungen (Shorts) aus. Geht er nach oben, setzen sie auf eine Rallye.")
+    col1.metric("All-Time Low (Short)", f"{int(max_short):,}")
+    col2.metric("Durchschnitt", f"{int(avg_short):,}")
+    
+    percent_of_extreme = (val / max_short) * 100
+    st.write(f"👉 Wir sind aktuell bei **{percent_of_extreme:.1f}%** des historischen Short-Extrems.")
 
 except Exception as e:
     st.error(f"Fehler: {e}")
