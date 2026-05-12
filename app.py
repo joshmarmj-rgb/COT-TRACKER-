@@ -63,7 +63,7 @@ if page == "DASHBOARD":
         st.markdown(f"<div class='data-card'><p class='label'>VERKÄUFER</p><p class='sell-red'>{n_s:,}</p></div>", unsafe_allow_html=True)
     with c3:
         n_c = "net-green" if n_net > 0 else "net-red"
-        st.markdown(f<div class='data-card'><p class='label'>NETTO</p><p class='{n_c}'>{n_net:,}</p></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='data-card'><p class='label'>NETTO</p><p class='{n_c}'>{n_net:,}</p></div>", unsafe_allow_html=True)
 
     st.write("---")
     
