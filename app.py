@@ -11,79 +11,86 @@ st.markdown("""<style>
     * { background-color: #000 !important; color: #00ff41 !important; font-family: 'JetBrains Mono', monospace !important; }
     .stTable, table { border: 1px solid #00ff41 !important; }
     .stSelectbox div[data-baseweb="select"] { border: 1px solid #00ff41 !important; }
+    .status-box { border: 1px solid #00ff41; padding: 15px; margin: 10px 0; }
 </style>""", unsafe_allow_html=True)
 
-# --- CORE ENGINE (Lädt Nasdaq und Gold) ---
+# --- ENGINE ---
 @st.cache_data(ttl=600)
 def get_market_data():
-    url = "https://www.cftc.gov/files/dea/history/fut_fin_txt_2026.zip"
-    r = requests.get(url)
-    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
-        df = pd.read_csv(z.open(z.namelist()[0]), low_memory=False)
-    df.columns = df.columns.str.strip()
-    return df
+    try:
+        url = "https://www.cftc.gov/files/dea/history/fut_fin_txt_2026.zip"
+        r = requests.get(url, timeout=10)
+        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+            df = pd.read_csv(z.open(z.namelist()[0]), low_memory=False)
+        df.columns = df.columns.str.strip()
+        return df
+    except: return None
 
 raw_df = get_market_data()
 
-def process_market(market_name, search_term):
-    data = raw_df[raw_df['Market_and_Exchange_Names'].str.contains(search_term, na=False)].copy()
-    data['Date'] = pd.to_datetime(data['As_of_Date_In_Form_YYMMDD'], format='%y%m%d')
-    data = data.sort_values('Date', ascending=False)
-    return data
+def safe_process(search_term):
+    if raw_df is None: return pd.DataFrame()
+    # Flexible Suche, um den Fehler aus Bildschirmfoto_12-5-2026_235514... zu vermeiden
+    data = raw_df[raw_df['Market_and_Exchange_Names'].str.contains(search_term, na=False, case=False)].copy()
+    if not data.empty:
+        data['Date'] = pd.to_datetime(data['As_of_Date_In_Form_YYMMDD'], format='%y%m%d')
+        return data.sort_values('Date', ascending=False)
+    return pd.DataFrame()
 
-# Daten-Extraktion
-nasdaq_data = process_market("Nasdaq", "MICRO E-MINI NASDAQ-100")
-gold_data = process_market("Gold", "GOLD - COMMODITY EXCHANGE") # Klassisches Gold (COMEX)
+# Daten laden (Nasdaq = TFF Bericht / Gold = Legacy Bericht)
+nasdaq = safe_process("MICRO E-MINI NASDAQ-100")
+gold = safe_process("GOLD - COMMODITY EXCHANGE")
 
-# --- SEITENMENÜ FÜR NAVIGATION ---
-st.sidebar.title("MakroBase // NAVIGATION")
-auswahl = st.sidebar.radio("MARKT_AUSWAHL", ["KORRELATION_CHECK", "NASDAQ_DETAILS", "GOLD_DETAILS"])
+# --- NAVIGATION ---
+st.sidebar.title("MakroBase // NAV")
+auswahl = st.sidebar.radio("MODUS", ["KORRELATION", "NASDAQ_DETAILS", "GOLD_DETAILS"])
 
-if auswahl == "KORRELATION_CHECK":
-    st.header("STRATEGISCHER_KORRELATIONS_ABGLEICH")
+if nasdaq.empty or gold.empty:
+    st.error("DATEN_LADE_FEHLER: Einer der Märkte wurde nicht gefunden.")
+else:
+    # Aktuelle Werte extrahieren
+    # Nasdaq (Leveraged Funds)
+    n_l, n_s = int(nasdaq.iloc[0]['Lev_Money_Positions_Long_All']), int(nasdaq.iloc[0]['Lev_Money_Positions_Short_All'])
+    n_net = n_l - n_s
     
-    # Aktuelle Netto-Werte holen
-    n_long = int(nasdaq_data.iloc[0]['Lev_Money_Positions_Long_All'])
-    n_short = int(nasdaq_data.iloc[0]['Lev_Money_Positions_Short_All'])
-    n_netto = n_long - n_short
-    
-    # Bei Gold (Legacy-Report) nutzen wir Non-Commercials
-    g_long = int(gold_data.iloc[0]['NonComm_Positions_Long_All'])
-    g_short = int(gold_data.iloc[0]['NonComm_Positions_Short_All'])
-    g_netto = g_long - g_short
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("NASDAQ_BIAS")
-        st.write(f"Netto: {n_netto:,}")
-        n_status = "BÄRISCH" if n_netto < 0 else "BULLISCH"
-        st.write(f"Status: {n_status}")
+    # Gold (Non-Commercials)
+    g_l, g_s = int(gold.iloc[0]['NonComm_Positions_Long_All']), int(gold.iloc[0]['NonComm_Positions_Short_All'])
+    g_net = g_l - g_s
+
+    if auswahl == "KORRELATION":
+        st.header("STRATEGISCHE_ANALYSE")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.write(f"NASDAQ_NETTO: {n_net:,}")
+            st.write(f"BIAS: {'GEFAHR' if n_net < 0 else 'STABIL'}")
+        with c2:
+            st.write(f"GOLD_NETTO: {g_net:,}")
+            st.write(f"BIAS: {'SICHERHEIT' if g_net > 0 else 'NEUTRAL'}")
         
-    with col2:
-        st.subheader("GOLD_BIAS")
-        st.write(f"Netto: {g_netto:,}")
-        g_status = "BÄRISCH" if g_netto < 0 else "BULLISCH"
-        st.write(f"Status: {g_status}")
+        st.write("---")
+        # Knallharte Korrelations-Logik
+        if n_net < -150000 and g_net > 150000:
+            st.markdown("<div class='status-box' style='color:#ff2255 !important;'>ALARM: RISK-OFF MODUS<br>Hedgefonds flüchten aus Tech in Gold. Crashgefahr erhöht.</div>", unsafe_allow_html=True)
+        elif n_net > 0 and g_net < 0:
+            st.markdown("<div class='status-box'>ALARM: RISK-ON MODUS<br>Geld fließt in Tech, Gold wird ignoriert. Bullenmarkt aktiv.</div>", unsafe_allow_html=True)
+        else:
+            st.write("STATUS: KEINE_KLARE_FLUCHTBEWEGUNG")
 
-    st.write("---")
-    st.header("INTELLIGENZ_AUSWERTUNG:")
-    
-    if n_netto < -100000 and g_netto > 100000:
-        st.error("!!! FLUCHT IN SICHERHEIT (RISK-OFF) !!!")
-        st.write("LOGIK: Hedgefonds wetten gegen Tech-Aktien und kaufen Gold. Dies deutet auf eine bevorstehende Markt-Korrektur oder globale Unsicherheit hin.")
-    elif n_netto > 50000 and g_netto < 0:
-        st.success("!!! RISIKO-MODUS AKTIV (RISK-ON) !!!")
-        st.write("LOGIK: Aktien werden gekauft, Gold wird verkauft. Volles Vertrauen in die Wirtschaft.")
-    else:
-        st.warning("MARKT-NEUTRALITÄT")
-        st.write("LOGIK: Keine eindeutige Fluchtbewegung erkennbar.")
+    elif auswahl == "GOLD_DETAILS":
+        st.header("GOLD_NODE_ANALYSE")
+        g_oi = int(gold.iloc[0]['Open_Interest_All'])
+        g_ratio = (g_s / g_oi) * 100
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("GOLD_NETTO", f"{g_net:,}")
+        c2.metric("KAUF (LONG)", f"{g_l:,}")
+        c3.metric("VERKAUF (SHORT)", f"{g_s:,}")
+        
+        st.write("---")
+        st.write(f"VERKAUFS_ANTEIL_GOLD: {g_ratio:.2f}%")
+        st.table(gold[['Date', 'NonComm_Positions_Long_All', 'NonComm_Positions_Short_All']].head(10))
 
-elif auswahl == "NASDAQ_DETAILS":
-    st.header("NASDAQ_NODE_DATA")
-    # (Hier kommt dein bekannter Nasdaq-Code rein...)
-    st.write("Aktuelle Netto-Power:", n_netto)
-
-elif auswahl == "GOLD_DETAILS":
-    st.header("GOLD_NODE_DATA")
-    st.write(f"Gold Netto-Position: {g_netto:,}")
-    st.table(gold_data[['Date', 'NonComm_Positions_Long_All', 'NonComm_Positions_Short_All']].head(10))
+    elif auswahl == "NASDAQ_DETAILS":
+        st.header("NASDAQ_NODE_ANALYSE")
+        st.metric("NETTO_POWER", f"{n_net:,}")
+        st.table(nasdaq[['Date', 'Lev_Money_Positions_Long_All', 'Lev_Money_Positions_Short_All']].head(10))
