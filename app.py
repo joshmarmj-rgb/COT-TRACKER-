@@ -3,65 +3,32 @@ import pandas as pd
 import requests
 import io
 import zipfile
-import datetime
 
 # =================================================================
-# 1. CORE CONFIGURATION & HANDY-GRID STYLING
+# 1. HARDCORE TERMINAL CONFIG (v71 - PROFESSIONAL FOREX MATRIX)
 # =================================================================
-st.set_page_config(
-    page_title="INSTITUTIONAL MACRO v56", 
-    page_icon="📡", 
-    layout="wide", 
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="HEDGE FUND TERMINAL v71", layout="wide")
 
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;700&display=swap');
+    :root { --bg: #000; --card: #050505; --brd: #111; --green: #00ff41; --red: #ff4136; --blue: #0077ff; }
+    .stApp { background-color: var(--bg); color: #e0e0e0; font-family: 'Inter', sans-serif; }
     
-    :root {
-        --bg-color: #000000;
-        --card-bg: #050505;
-        --border-color: #1a1a1a;
-        --text-main: #e0e0e0;
-    }
-
-    .stApp { background-color: var(--bg-color); color: var(--text-main); font-family: 'Inter', sans-serif; }
+    /* Forex Matrix Styling */
+    .fx-card { background: var(--card); border: 1px solid var(--brd); padding: 15px; border-radius: 2px; margin-bottom: 10px; }
+    .label-row { display: flex; justify-content: space-between; font-family: 'JetBrains Mono'; font-size: 11px; color: #444; text-transform: uppercase; margin-bottom: 5px; }
+    .main-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+    .ticker { font-family: 'JetBrains Mono'; font-size: 18px; font-weight: 700; color: #fff; }
+    .net-val { font-family: 'JetBrains Mono'; font-size: 18px; font-weight: 700; }
     
-    .data-card { 
-        background-color: var(--card-bg); 
-        border: 1px solid var(--border-color); 
-        padding: 15px; 
-        border-radius: 4px;
-        margin-bottom: 10px;
-    }
-
-    .instrument-title { 
-        font-size: 18px; 
-        font-weight: 700; 
-        margin-bottom: 12px; 
-        color: #fff;
-    }
-
-    .metrics-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
-        gap: 8px;
-    }
-
-    .metric-box { display: flex; flex-direction: column; }
-    .label { color: #555; font-size: 9px; text-transform: uppercase; font-weight: 700; }
+    /* Progress Bar for Long/Short Ratio */
+    .ratio-bar-bg { background: var(--red); height: 4px; width: 100%; border-radius: 2px; display: flex; overflow: hidden; margin: 10px 0; }
+    .ratio-bar-fill { background: var(--green); height: 100%; transition: width 0.5s; }
     
-    .number { 
-        font-size: clamp(14px, 4.5vw, 20px); 
-        font-family: 'JetBrains Mono', monospace; 
-        font-weight: 700;
-        white-space: nowrap;
-    }
-
-    .power-container { background: #111; height: 10px; border-radius: 5px; margin: 10px 0; border: 1px solid #222; }
-    .power-bar { height: 100%; transition: width 1s ease; }
-
+    .status-tag { font-family: 'JetBrains Mono'; font-size: 9px; padding: 2px 6px; border-radius: 2px; }
+    .dept-header { font-family: 'JetBrains Mono'; font-size: 13px; color: #333; letter-spacing: 5px; border-bottom: 1px solid #111; margin-bottom: 20px; padding-bottom: 10px; }
+    
     #MainMenu, footer, header { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
@@ -70,99 +37,112 @@ st.markdown("""
 # 2. DATA ENGINE
 # =================================================================
 @st.cache_data(ttl=3600)
-def load_cftc_data(report_type="fin"):
-    urls = {
-        "fin": "https://www.cftc.gov/files/dea/history/fut_fin_txt_2026.zip",
-        "dis": "https://www.cftc.gov/files/dea/history/fut_disagg_txt_2026.zip"
-    }
-    try:
-        r = requests.get(urls[report_type], timeout=25)
-        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
-            df = pd.read_csv(z.open(z.namelist()[0]), low_memory=False)
-        df.columns = df.columns.str.strip()
-        return df
-    except:
-        return pd.DataFrame()
+def get_cftc_master(year):
+    data = {}
+    for k, suffix in [("fin", "fin"), ("dis", "disagg")]:
+        try:
+            url = f"https://www.cftc.gov/files/dea/history/fut_{suffix}_txt_{year}.zip"
+            r = requests.get(url, timeout=25)
+            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                df = pd.read_csv(z.open(z.namelist()[0]), low_memory=False)
+            df.columns = df.columns.str.strip()
+            data[k] = df
+        except: data[k] = pd.DataFrame()
+    return data
 
-def get_row_safe(df, search_term):
-    if df.empty: return None
-    match = df[df['Market_and_Exchange_Names'].str.contains(search_term, na=False, case=False)]
-    return match.iloc[0] if not match.empty else None
-
-def render_instrument_card(name, long, short, color="#fff"):
-    net = long - short
-    n_color = "#00ff41" if net > 0 else "#ff4136"
-    st.markdown(f"""
-    <div class="data-card">
-        <div class="instrument-title" style="border-left: 3px solid {color}; padding-left: 10px;">{name}</div>
-        <div class="metrics-grid">
-            <div class="metric-box"><span class="label">Long</span><span class="number" style="color: #0077ff;">{long:,}</span></div>
-            <div class="metric-box"><span class="label">Short</span><span class="number" style="color: #ff4136;">{short:,}</span></div>
-            <div class="metric-box"><span class="label">Net</span><span class="number" style="color: {n_color};">{net:,}</span></div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+def extract_data(df, search, mode="fin"):
+    match = df[df['Market_and_Exchange_Names'].str.contains(search, na=False, case=False)]
+    if match.empty: return None
+    r = match.iloc[0]
+    l_c = 'Lev_Money_Positions_Long_All' if mode == "fin" else 'M_Money_Positions_Long_All'
+    s_c = 'Lev_Money_Positions_Short_All' if mode == "fin" else 'M_Money_Positions_Short_All'
+    cl_c = 'Change_in_Lev_Money_Long_All' if mode == "fin" else 'Change_in_M_Money_Long_All'
+    cs_c = 'Change_in_Lev_Money_Short_All' if mode == "fin" else 'Change_in_M_Money_Short_All'
+    return {"l": int(r[l_c]), "s": int(r[s_c]), "cl": int(r[cl_c]), "cs": int(r[cs_c]), "net": int(r[l_c]) - int(r[s_c])}
 
 # =================================================================
-# 3. MAIN EXECUTION (FIXED INDENTATION)
+# 3. INTERFACE
 # =================================================================
-fin_df = load_cftc_data("fin")
-dis_df = load_cftc_data("dis")
+master = get_cftc_master(2026)
 
-if not fin_df.empty and not dis_df.empty:
-    nq_row = get_row_safe(fin_df, "NASDAQ-100")
-    gc_row = get_row_safe(dis_df, "GOLD")
-    cl_row = get_row_safe(dis_df, "CRUDE OIL")
+with st.sidebar:
+    st.markdown("### 🖥️ CORE SELECT")
+    selection = st.radio("Abteilung:", ["🛡️ FOREX MATRIX", "📊 NASDAQ (NQ)", "🟡 GOLD (GC)", "🛢️ CRUDE OIL (CL)"])
 
-    st.markdown('<p style="color: #444; font-size: 10px; letter-spacing: 2px;">MARKET_ASSETS</p>', unsafe_allow_html=True)
+if not master["fin"].empty:
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if nq_row is not None:
-            render_instrument_card("Nasdaq 100", int(nq_row['Lev_Money_Positions_Long_All']), int(nq_row['Lev_Money_Positions_Short_All']), "#00d4ff")
-    with col2:
-        if gc_row is not None:
-            render_instrument_card("Gold", int(gc_row['M_Money_Positions_Long_All']), int(gc_row['M_Money_Positions_Short_All']), "#ffcc00")
-    with col3:
-        if cl_row is not None:
-            render_instrument_card("WTI Oil", int(cl_row['M_Money_Positions_Long_All']), int(cl_row['M_Money_Positions_Short_All']), "#bf55ff")
+    if selection == "🛡️ FOREX MATRIX":
+        st.markdown('<div class="dept-header">INSTITUTIONAL CURRENCY FLOWS</div>', unsafe_allow_html=True)
+        
+        # USD Score Berechnung
+        basket = {"EUR": "EURO FX", "GBP": "BRITISH POUND", "JPY": "JAPANESE YEN", "AUD": "AUSTRALIAN DOLLAR", "CAD": "CANADIAN DOLLAR", "CHF": "SWISS FRANC"}
+        total_net = 0
+        fx_data = {}
+        for ticker, search in basket.items():
+            res = extract_data(master["fin"], search, "fin")
+            if res:
+                fx_data[ticker] = res
+                total_net += res['net']
+        
+        usd_score = -(total_net) / 25000
+        score_color = "var(--green)" if usd_score > 0 else "var(--red)"
+        
+        # Hero Stat
+        st.markdown(f"""
+            <div style="background:#080808; padding:30px; border:1px solid #111; margin-bottom:20px;">
+                <div style="font-family:'JetBrains Mono'; font-size:10px; color:#444;">AGGREGATED USD POWER INDEX</div>
+                <div style="font-size:54px; font-weight:700; color:{score_color};">{usd_score:.2f}</div>
+            </div>
+        """, unsafe_allow_html=True)
 
-    # Forex & USD Power
-    pairs = {"EUR": "EURO FX", "GBP": "BRITISH POUND", "JPY": "JAPANESE YEN", "AUD": "AUSTRALIAN DOLLAR", "CAD": "CANADIAN DOLLAR"}
-    total_net = 0
-    fx_results = {}
-    for code, search in pairs.items():
-        row = get_row_safe(fin_df, search)
-        if row is not None:
-            net = int(row['Lev_Money_Positions_Long_All']) - int(row['Lev_Money_Positions_Short_All'])
-            fx_results[code] = net
-            total_net += net
-    
-    usd_score = -(total_net) / 25000
-    p_color = "#00ff41" if usd_score > 0 else "#ff4136"
-    p_width = min(max((usd_score + 50) / 100, 0), 1) * 100
+        # Die Matrix
+        for ticker, data in fx_data.items():
+            total_pos = data['l'] + data['s']
+            long_pct = (data['l'] / total_pos * 100) if total_pos > 0 else 50
+            net_color = "var(--green)" if data['net'] > 0 else "var(--red)"
+            flow = data['cl'] - data['cs']
+            flow_color = "var(--green)" if flow > 0 else "var(--red)"
+            
+            # Status Logik
+            if long_pct > 70: status, s_bg = "EXTREME LONG", "rgba(0, 255, 65, 0.1)"
+            elif long_pct < 30: status, s_bg = "EXTREME SHORT", "rgba(255, 65, 54, 0.1)"
+            else: status, s_bg = "NEUTRAL / BALANCED", "#111"
 
-    st.markdown('<br><p style="color: #444; font-size: 10px; letter-spacing: 2px;">USD_POWER_INDEX</p>', unsafe_allow_html=True)
-    st.markdown(f"""
-    <div style="background: #050505; border: 1px solid #111; padding: 20px; border-radius: 4px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 14px; font-weight: bold;">Institutional Bias</span>
-            <span style="color: {p_color}; font-family: monospace; font-size: 20px; font-weight: bold;">{usd_score:.2f}</span>
-        </div>
-        <div class="power-container"><div class="power-bar" style="width: {p_width}%; background: {p_color};"></div></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Forex Grid
-    f_cols = st.columns(5)
-    for i, (code, val) in enumerate(fx_results.items()):
-        with f_cols[i]:
-            v_color = "#00ff41" if val > 0 else "#ff4136"
             st.markdown(f"""
-            <div style="background: #050505; border: 1px solid #111; padding: 10px; text-align: center;">
-                <div class="label">{code}</div>
-                <div style="color: {v_color}; font-weight: bold; font-family: monospace;">{val//1000}k</div>
+            <div class="fx-card">
+                <div class="label-row">
+                    <span>Ticker: {ticker}/USD</span>
+                    <span style="background:{s_bg}; color:{net_color}; padding: 0 5px;">{status}</span>
+                </div>
+                <div class="main-row">
+                    <span class="ticker">{ticker}</span>
+                    <span class="net-val" style="color:{net_color};">{data['net']:,}</span>
+                </div>
+                <div class="ratio-bar-bg"><div class="ratio-bar-fill" style="width:{long_pct}%;"></div></div>
+                <div class="label-row">
+                    <span>LONG: {long_pct:.1f}%</span>
+                    <span style="color:{flow_color};">WEEKLY FLOW: {flow:+,}</span>
+                    <span>SHORT: {100-long_pct:.1f}%</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # --- ANDERE ASSETS (NQ, GOLD, CL) ---
+    elif selection in ["📊 NASDAQ (NQ)", "🟡 GOLD (GC)", "🛢️ CRUDE OIL (CL)"]:
+        mapping = {"📊 NASDAQ (NQ)": ("NASDAQ-100", "fin"), "🟡 GOLD (GC)": ("GOLD", "dis"), "🛢️ CRUDE OIL (CL)": ("CRUDE OIL", "dis")}
+        search_term, m_type = mapping[selection]
+        asset = extract_data(master[m_type], search_term, m_type)
+        if asset:
+            a_col = "var(--green)" if asset['net'] > 0 else "var(--red)"
+            st.markdown(f'<div class="dept-header">{selection}</div>', unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="fx-card">
+                <div class="metrics-grid" style="display:flex; justify-content:space-between;">
+                    <div><div class="label-row">NET POSITION</div><div class="ticker" style="color:{a_col};">{asset['net']:,}</div></div>
+                    <div><div class="label-row">LONGS</div><div class="ticker" style="color:var(--blue);">{asset['l']:,}</div></div>
+                    <div><div class="label-row">SHORTS</div><div class="ticker" style="color:var(--red);">{asset['s']:,}</div></div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
 else:
-    st.error("Warte auf Datenstream...")
+    st.error("CFTC DATA STREAM OFFLINE")
